@@ -32,7 +32,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY ./app ./app
-COPY ./config ./config
 
 # Create temp directory and set proper permissions
 RUN mkdir -p /tmp/n8n-tools-api && \
