@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  n8n-tools-api:
+    build: .
+    container_name: n8n-tools-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Application configuration
+      - APP_NAME=N8N Tools API
+      - VERSION=0.1.0
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8000
+      # File handling
+      - MAX_FILE_SIZE=52428800  # 50MB
+      - TEMP_DIR=/tmp/n8n-tools-api
+      # Logging
+      - LOG_LEVEL=INFO
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    # Security: run as non-root user (handled in Dockerfile)
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Networks for potential future services
+networks:
+  default:
+    name: n8n-tools-network

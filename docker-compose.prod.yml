@@ -1,0 +1,19 @@
+version: '3.8'
+
+# Production override - use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+services:
+  n8n-tools-api:
+    environment:
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=https://your-n8n-domain.com
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+    # Remove volume mounts for production (code is baked into image)
+    volumes: []
