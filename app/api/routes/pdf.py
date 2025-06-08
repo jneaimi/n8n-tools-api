@@ -13,10 +13,16 @@ import time
 import io
 import zipfile
 import json
+import re
 
 from app.services.pdf_service import PDFService
 from app.utils.file_utils import validate_pdf_file, get_file_info, save_temp_file, cleanup_temp_file
-from app.models.pdf_models import PageRangeRequest, PDFSplitResponse, PDFMetadataResponse
+from app.models.pdf_models import (
+    PageRangeRequest, PDFSplitResponse, PDFMetadataResponse,
+    MergeOptions, PageSelectionRequest, RangeSelectionRequest, 
+    PDFMergeResponse, MergeInfoResponse, BatchSplitOptions,
+    BatchSplitInfoRequest, BatchSplitInfoResponse, PDFBatchSplitResponse
+)
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +228,112 @@ async def split_pdf_to_pages(file: UploadFile = File(...)):
             detail=f"Failed to split PDF: {str(e)}"
         )
 
+# ================== PDF BATCH SPLIT ENDPOINTS ==================
+
+@router.post("/split/batch", summary="Split PDF into Batches")
+async def split_pdf_into_batches(
+    file: UploadFile = File(..., description="PDF file to split"),
+    batch_size: int = Form(..., description="Number of pages per batch", gt=0, le=1000),
+    output_prefix: Optional[str] = Form(None, description="Custom filename prefix")
+):
+    """Split PDF into batches of specified page count.
+    
+    For example, if batch_size=4 and PDF has 10 pages, creates 3 files:
+    - Batch 1: pages 1-4
+    - Batch 2: pages 5-8  
+    - Batch 3: pages 9-10
+    """
+    try:
+        start_time = time.time()
+        
+        # Validate the file
+        await validate_pdf_file(file)
+        
+        # Read file content
+        pdf_content = await file.read()
+        
+        # Get original filename for output naming
+        original_filename = file.filename or "document.pdf"
+        if output_prefix:
+            # Use custom prefix if provided
+            original_filename = f"{output_prefix}.pdf"
+        
+        # Split PDF into batches
+        batch_files = await PDFService.split_into_batches(
+            pdf_content, 
+            batch_size, 
+            original_filename
+        )
+        
+        # Get source metadata
+        metadata = await PDFService.get_metadata(pdf_content)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        # Create ZIP file containing all batch PDFs
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for filename, pdf_bytes in batch_files.items():
+                zip_file.writestr(filename, pdf_bytes)
+        
+        zip_buffer.seek(0)
+        
+        # Generate output filename for ZIP
+        base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+        zip_filename = f"{base_name}_batches_size_{batch_size}.zip"
+        
+        # Return ZIP file as streaming response
+        return StreamingResponse(
+            io.BytesIO(zip_buffer.getvalue()),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={zip_filename}",
+                "X-Batch-Count": str(len(batch_files)),
+                "X-Batch-Size": str(batch_size),
+                "X-Total-Pages": str(metadata["page_count"]),
+                "X-Processing-Time-Ms": str(round(processing_time, 2)),
+                "X-File-Size-MB": str(metadata["file_size_mb"])
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to split PDF into batches: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to split PDF into batches: {str(e)}"
+        )
+
+@router.post("/split/batch/info", summary="Get Batch Split Information")
+async def get_batch_split_info(
+    file: UploadFile = File(..., description="PDF file to analyze"),
+    batch_size: int = Form(..., description="Number of pages per batch", gt=0, le=1000)
+):
+    """Get information about how a PDF would be split into batches (preview)."""
+    try:
+        # Validate the file
+        await validate_pdf_file(file)
+        
+        # Read file content
+        pdf_content = await file.read()
+        
+        # Get batch split information
+        batch_info = await PDFService.get_batch_split_info(pdf_content, batch_size)
+        
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Batch split preview for {batch_info['total_pages']} pages with batch size {batch_size}",
+                **batch_info
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get batch split info: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to analyze file for batch splitting: {str(e)}"
+        )
+
 # Legacy placeholder endpoints (will be removed later)
 @router.post("/split", summary="Split PDF - Legacy Endpoint")
 async def split_pdf():
@@ -237,10 +349,316 @@ async def split_pdf():
         status_code=200
     )
 
-@router.post("/merge", summary="Merge PDFs")  
-async def merge_pdfs():
-    """Merge multiple PDFs into one - To be implemented."""
-    return JSONResponse(
-        content={"message": "PDF merge functionality coming soon"},
-        status_code=501
-    )
+# ================== PDF MERGE ENDPOINTS ==================
+
+@router.post("/merge", summary="Merge Multiple PDFs")
+async def merge_pdfs(
+    files: List[UploadFile] = File(..., description="PDF files to merge (minimum 2)"),
+    merge_strategy: str = Form("append", description="Merge strategy: 'append' or 'interleave'"),
+    preserve_metadata: bool = Form(True, description="Preserve metadata from first PDF"),
+    output_filename: Optional[str] = Form(None, description="Custom output filename")
+):
+    """Merge multiple PDF files into a single document."""
+    try:
+        start_time = time.time()
+        
+        # Validate minimum file count
+        if len(files) < 2:
+            raise HTTPException(
+                status_code=400, 
+                detail="At least 2 PDF files are required for merging"
+            )
+        
+        if len(files) > 20:  # Reasonable limit
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum 20 files allowed for merging"
+            )
+        
+        # Validate and read all files
+        pdf_contents = []
+        source_files_info = []
+        
+        for i, file in enumerate(files):
+            try:
+                # Validate each file
+                await validate_pdf_file(file)
+                
+                # Read content
+                content = await file.read()
+                pdf_contents.append(content)
+                
+                # Get file info for response
+                file_info = await get_file_info(file)
+                source_files_info.append({
+                    "index": i + 1,
+                    "filename": file.filename,
+                    "size_mb": file_info.get("size_mb", 0),
+                    "pages": file_info.get("pages", 0)
+                })
+                
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid file at position {i + 1}: {str(e)}"
+                )
+        
+        # Perform merge
+        merged_content = await PDFService.merge_pdfs(
+            pdf_contents, 
+            preserve_metadata=preserve_metadata,
+            merge_strategy=merge_strategy
+        )
+        
+        # Get merged file info
+        merged_metadata = await PDFService.get_metadata(merged_content)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        # Generate output filename
+        if not output_filename:
+            output_filename = f"merged_{int(time.time())}.pdf"
+        elif not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        # Return merged PDF as streaming response
+        return StreamingResponse(
+            io.BytesIO(merged_content),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={output_filename}",
+                "X-Files-Merged": str(len(files)),
+                "X-Total-Pages": str(merged_metadata["page_count"]),
+                "X-Processing-Time-Ms": str(round(processing_time, 2)),
+                "X-Merge-Strategy": merge_strategy,
+                "X-File-Size-MB": str(merged_metadata["file_size_mb"])
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to merge PDFs: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to merge PDFs: {str(e)}"
+        )
+
+@router.post("/merge/info", summary="Get PDF Merge Information")
+async def get_merge_info(files: List[UploadFile] = File(..., description="PDF files to analyze")):
+    """Get information about PDFs before merging (preview)."""
+    try:
+        if len(files) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="At least 2 PDF files are required"
+            )
+        
+        # Validate and read all files
+        pdf_contents = []
+        
+        for i, file in enumerate(files):
+            try:
+                await validate_pdf_file(file)
+                content = await file.read()
+                pdf_contents.append(content)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid file at position {i + 1}: {str(e)}"
+                )
+        
+        # Get merge information
+        merge_info = await PDFService.get_merge_info(pdf_contents)
+        
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": "Merge information retrieved successfully",
+                **merge_info
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get merge info: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to analyze files: {str(e)}"
+        )
+
+@router.post("/merge/pages", summary="Merge PDFs with Page Selection")
+async def merge_pdfs_with_pages(
+    files: List[UploadFile] = File(..., description="PDF files to merge"),
+    page_selections: str = Form(..., description="JSON string of page selections per file"),
+    preserve_metadata: bool = Form(True, description="Preserve metadata from first PDF"),
+    output_filename: Optional[str] = Form(None, description="Custom output filename")
+):
+    """Merge PDFs with specific page selections.
+    
+    page_selections should be a JSON string like: "[[1,2,3], [1,5,6], [2,4]]"
+    This means: pages 1,2,3 from file 1, pages 1,5,6 from file 2, pages 2,4 from file 3.
+    """
+    try:
+        start_time = time.time()
+        
+        # Parse page selections
+        try:
+            import json
+            page_lists = json.loads(page_selections)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid page_selections JSON format"
+            )
+        
+        if len(files) != len(page_lists):
+            raise HTTPException(
+                status_code=400,
+                detail="Number of files must match number of page selection lists"
+            )
+        
+        # Validate and read files
+        pdf_specs = []
+        
+        for i, (file, pages) in enumerate(zip(files, page_lists)):
+            try:
+                await validate_pdf_file(file)
+                content = await file.read()
+                
+                # Validate page numbers
+                if pages and any(p < 1 for p in pages):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid page numbers for file {i + 1}: pages must be >= 1"
+                    )
+                
+                pdf_specs.append((content, pages))
+                
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error with file {i + 1}: {str(e)}"
+                )
+        
+        # Perform merge with page selection
+        merged_content = await PDFService.merge_with_page_selection(
+            pdf_specs,
+            preserve_metadata=preserve_metadata
+        )
+        
+        processing_time = (time.time() - start_time) * 1000
+        merged_metadata = await PDFService.get_metadata(merged_content)
+        
+        # Generate output filename
+        if not output_filename:
+            output_filename = f"merged_pages_{int(time.time())}.pdf"
+        elif not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        return StreamingResponse(
+            io.BytesIO(merged_content),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={output_filename}",
+                "X-Files-Merged": str(len(files)),
+                "X-Total-Pages": str(merged_metadata["page_count"]),
+                "X-Processing-Time-Ms": str(round(processing_time, 2)),
+                "X-Merge-Type": "page-selection",
+                "X-File-Size-MB": str(merged_metadata["file_size_mb"])
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to merge PDFs with page selection: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to merge PDFs: {str(e)}"
+        )
+
+@router.post("/merge/ranges", summary="Merge PDFs with Range Selection")
+async def merge_pdfs_with_ranges(
+    files: List[UploadFile] = File(..., description="PDF files to merge"),
+    range_selections: str = Form(..., description="JSON string of range selections per file"),
+    preserve_metadata: bool = Form(True, description="Preserve metadata from first PDF"),
+    output_filename: Optional[str] = Form(None, description="Custom output filename")
+):
+    """Merge PDFs with specific page range selections.
+    
+    range_selections should be a JSON string like: "[['1-3', '5'], ['2-4'], ['1', '6-8']]"
+    This means: pages 1-3,5 from file 1, pages 2-4 from file 2, pages 1,6-8 from file 3.
+    """
+    try:
+        start_time = time.time()
+        
+        # Parse range selections
+        try:
+            import json
+            range_lists = json.loads(range_selections)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid range_selections JSON format"
+            )
+        
+        if len(files) != len(range_lists):
+            raise HTTPException(
+                status_code=400,
+                detail="Number of files must match number of range selection lists"
+            )
+        
+        # Validate and read files
+        pdf_specs = []
+        
+        for i, (file, ranges) in enumerate(zip(files, range_lists)):
+            try:
+                await validate_pdf_file(file)
+                content = await file.read()
+                
+                # Validate range format
+                for range_str in ranges:
+                    if not re.match(r'^\d+(-\d+)?$', range_str.strip()):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid range format in file {i + 1}: {range_str}"
+                        )
+                
+                pdf_specs.append((content, ranges))
+                
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error with file {i + 1}: {str(e)}"
+                )
+        
+        # Perform merge with range selection
+        merged_content = await PDFService.merge_with_ranges(
+            pdf_specs,
+            preserve_metadata=preserve_metadata
+        )
+        
+        processing_time = (time.time() - start_time) * 1000
+        merged_metadata = await PDFService.get_metadata(merged_content)
+        
+        # Generate output filename
+        if not output_filename:
+            output_filename = f"merged_ranges_{int(time.time())}.pdf"
+        elif not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        return StreamingResponse(
+            io.BytesIO(merged_content),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={output_filename}",
+                "X-Files-Merged": str(len(files)),
+                "X-Total-Pages": str(merged_metadata["page_count"]),
+                "X-Processing-Time-Ms": str(round(processing_time, 2)),
+                "X-Merge-Type": "range-selection", 
+                "X-File-Size-MB": str(merged_metadata["file_size_mb"])
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to merge PDFs with ranges: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to merge PDFs: {str(e)}"
+        )
