@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     
     # Logging
     LOG_LEVEL: str = "INFO"
+    LOG_JSON_FORMAT: bool = True
+    LOG_CORRELATION_ID: bool = True
     
     @field_validator('CORS_ORIGINS')
     @classmethod

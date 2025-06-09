@@ -10,12 +10,17 @@ import tempfile
 import os
 import io
 import re
-import logging
+import time
 from datetime import datetime
 
 from app.core.errors import PDFProcessingError
-
-logger = logging.getLogger(__name__)
+from app.core.logging import (
+    log_pdf_operation, 
+    log_validation_result, 
+    log_performance_metric,
+    get_correlation_id,
+    app_logger
+)
 
 class PDFService:
     """Service class for PDF operations."""
@@ -57,16 +62,20 @@ class PDFService:
         return start - 1, end - 1  # Convert to 0-based indexing
     
     @staticmethod
-    async def split_by_ranges(pdf_content: bytes, ranges: List[str]) -> Dict[str, bytes]:
+    async def split_by_ranges(pdf_content: bytes, ranges: List[str], filename: str = "document.pdf") -> Dict[str, bytes]:
         """Split PDF by page ranges.
         
         Args:
             pdf_content: PDF file content as bytes
             ranges: List of page ranges (e.g., ['1-3', '5', '7-9'])
+            filename: Original filename for logging
             
         Returns:
             Dictionary mapping output filenames to PDF content bytes
         """
+        start_time = time.time()
+        correlation_id = get_correlation_id()
+        
         try:
             # Create PDF reader from bytes
             pdf_io = io.BytesIO(pdf_content)
@@ -75,6 +84,8 @@ class PDFService:
             
             if total_pages == 0:
                 raise PDFProcessingError("PDF has no pages")
+            
+            app_logger.info(f"Starting PDF split by ranges for {filename} ({total_pages} pages)")
             
             result = {}
             
@@ -94,35 +105,66 @@ class PDFService:
                     
                     # Generate filename
                     if start_idx == end_idx:
-                        filename = f"page_{start_idx + 1}.pdf"
+                        output_filename = f"page_{start_idx + 1}.pdf"
                     else:
-                        filename = f"pages_{start_idx + 1}-{end_idx + 1}.pdf"
+                        output_filename = f"pages_{start_idx + 1}-{end_idx + 1}.pdf"
                     
-                    result[filename] = output_bytes
+                    result[output_filename] = output_bytes
                     
                 except Exception as e:
-                    logger.error(f"Failed to process range '{page_range}': {str(e)}")
+                    app_logger.error(f"Failed to process range '{page_range}': {str(e)}")
                     raise PDFProcessingError(f"Failed to process range '{page_range}': {str(e)}")
             
-            logger.info(f"Successfully split PDF into {len(result)} files")
+            # Calculate processing time
+            processing_time = (time.time() - start_time) * 1000
+            
+            # Log successful operation
+            log_pdf_operation(
+                operation="split_by_ranges",
+                filename=filename,
+                file_size=len(pdf_content),
+                pages=total_pages,
+                processing_time_ms=processing_time,
+                output_files=len(result),
+                ranges=ranges,
+                correlation_id=correlation_id
+            )
+            
+            app_logger.info(f"Successfully split PDF into {len(result)} files")
             return result
             
         except Exception as e:
-            logger.error(f"Failed to split PDF by ranges: {str(e)}")
+            processing_time = (time.time() - start_time) * 1000
+            
+            # Log failed operation
+            log_pdf_operation(
+                operation="split_by_ranges",
+                filename=filename,
+                file_size=len(pdf_content),
+                processing_time_ms=processing_time,
+                error=str(e),
+                correlation_id=correlation_id
+            )
+            
+            app_logger.error(f"Failed to split PDF by ranges: {str(e)}")
             if isinstance(e, PDFProcessingError):
                 raise
             raise PDFProcessingError(f"Failed to split PDF: {str(e)}")
     
     @staticmethod
-    async def split_to_individual_pages(pdf_content: bytes) -> Dict[str, bytes]:
+    async def split_to_individual_pages(pdf_content: bytes, filename: str = "document.pdf") -> Dict[str, bytes]:
         """Split PDF into individual pages.
         
         Args:
             pdf_content: PDF file content as bytes
+            filename: Original filename for logging
             
         Returns:
             Dictionary mapping page filenames to PDF content bytes
         """
+        start_time = time.time()
+        correlation_id = get_correlation_id()
+        
         try:
             # Create PDF reader from bytes
             pdf_io = io.BytesIO(pdf_content)
@@ -131,6 +173,8 @@ class PDFService:
             
             if total_pages == 0:
                 raise PDFProcessingError("PDF has no pages")
+            
+            app_logger.info(f"Starting PDF split to individual pages for {filename} ({total_pages} pages)")
             
             result = {}
             
@@ -145,14 +189,40 @@ class PDFService:
                 output_bytes = output.getvalue()
                 
                 # Generate filename (1-based page numbering)
-                filename = f"page_{i + 1}.pdf"
-                result[filename] = output_bytes
+                page_filename = f"page_{i + 1}.pdf"
+                result[page_filename] = output_bytes
             
-            logger.info(f"Successfully split PDF into {total_pages} individual pages")
+            # Calculate processing time
+            processing_time = (time.time() - start_time) * 1000
+            
+            # Log successful operation
+            log_pdf_operation(
+                operation="split_to_pages",
+                filename=filename,
+                file_size=len(pdf_content),
+                pages=total_pages,
+                processing_time_ms=processing_time,
+                output_files=total_pages,
+                correlation_id=correlation_id
+            )
+            
+            app_logger.info(f"Successfully split PDF into {total_pages} individual pages")
             return result
             
         except Exception as e:
-            logger.error(f"Failed to split PDF to individual pages: {str(e)}")
+            processing_time = (time.time() - start_time) * 1000
+            
+            # Log failed operation
+            log_pdf_operation(
+                operation="split_to_pages",
+                filename=filename,
+                file_size=len(pdf_content),
+                processing_time_ms=processing_time,
+                error=str(e),
+                correlation_id=correlation_id
+            )
+            
+            app_logger.error(f"Failed to split PDF to individual pages: {str(e)}")
             if isinstance(e, PDFProcessingError):
                 raise
             raise PDFProcessingError(f"Failed to split PDF: {str(e)}")

@@ -9,13 +9,17 @@ import os
 import tempfile
 import re
 import uuid
+import time
 from typing import List, Optional
-import logging
 
 from app.core.config import settings
 from app.core.errors import FileSizeError, FileFormatError
-
-logger = logging.getLogger(__name__)
+from app.core.logging import (
+    log_file_upload, 
+    log_validation_result, 
+    app_logger, 
+    get_correlation_id
+)
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename to prevent path traversal and other security issues."""
@@ -47,46 +51,88 @@ def sanitize_filename(filename: str) -> str:
 
 async def validate_pdf_file(file: UploadFile) -> bool:
     """Validate uploaded PDF file with comprehensive checks."""
+    start_time = time.time()
+    correlation_id = get_correlation_id()
+    filename = file.filename or "unknown.pdf"
     
-    # Check file extension
-    if not file.filename:
-        raise FileFormatError("No filename provided")
-    
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    if file_ext not in settings.ALLOWED_EXTENSIONS:
-        raise FileFormatError(f"Invalid file format. Allowed: {settings.ALLOWED_EXTENSIONS}")
-    
-    # Check content type (note: this can be spoofed, so we also check magic bytes)
-    if file.content_type and file.content_type != "application/pdf":
-        raise FileFormatError("Invalid content type. Expected: application/pdf")
-    
-    # Read file content for size and magic byte validation
-    content = await file.read()
-    
-    # Check file size (50MB limit)
-    if len(content) > settings.MAX_FILE_SIZE:
-        raise FileSizeError(f"File too large. Max size: {settings.MAX_FILE_SIZE / (1024*1024):.1f}MB")
-    
-    # Check for empty file
-    if len(content) == 0:
-        raise FileFormatError("Empty file uploaded")
-    
-    # Verify PDF magic bytes (PDF files start with %PDF)
-    if not content.startswith(b'%PDF'):
-        raise FileFormatError("Invalid PDF file format - missing PDF header")
-    
-    # Additional PDF structure validation - check for basic PDF structure
-    if b'%%EOF' not in content:
-        raise FileFormatError("Invalid PDF file format - missing EOF marker")
-    
-    # Reset file pointer for subsequent operations
-    await file.seek(0)
-    
-    logger.info(f"Successfully validated PDF file: {file.filename} ({len(content)} bytes)")
-    return True
+    try:
+        # Check file extension
+        if not file.filename:
+            raise FileFormatError("No filename provided")
+        
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if file_ext not in settings.ALLOWED_EXTENSIONS:
+            raise FileFormatError(f"Invalid file format. Allowed: {settings.ALLOWED_EXTENSIONS}")
+        
+        # Check content type (note: this can be spoofed, so we also check magic bytes)
+        if file.content_type and file.content_type != "application/pdf":
+            raise FileFormatError("Invalid content type. Expected: application/pdf")
+        
+        # Read file content for size and magic byte validation
+        content = await file.read()
+        
+        # Log file upload
+        log_file_upload(
+            filename=filename,
+            file_size=len(content),
+            content_type=file.content_type or "application/pdf",
+            correlation_id=correlation_id
+        )
+        
+        # Check file size (50MB limit)
+        if len(content) > settings.MAX_FILE_SIZE:
+            raise FileSizeError(f"File too large. Max size: {settings.MAX_FILE_SIZE / (1024*1024):.1f}MB")
+        
+        # Check for empty file
+        if len(content) == 0:
+            raise FileFormatError("Empty file uploaded")
+        
+        # Verify PDF magic bytes (PDF files start with %PDF)
+        if not content.startswith(b'%PDF'):
+            raise FileFormatError("Invalid PDF file format - missing PDF header")
+        
+        # Additional PDF structure validation - check for basic PDF structure
+        if b'%%EOF' not in content:
+            raise FileFormatError("Invalid PDF file format - missing EOF marker")
+        
+        # Reset file pointer for subsequent operations
+        await file.seek(0)
+        
+        # Calculate validation time
+        validation_time = (time.time() - start_time) * 1000
+        
+        # Log successful validation
+        log_validation_result(
+            filename=filename,
+            is_valid=True,
+            validation_time_ms=validation_time,
+            correlation_id=correlation_id
+        )
+        
+        app_logger.info(f"Successfully validated PDF file: {filename} ({len(content)} bytes)")
+        return True
+        
+    except (FileFormatError, FileSizeError) as e:
+        # Calculate validation time
+        validation_time = (time.time() - start_time) * 1000
+        
+        # Log failed validation
+        log_validation_result(
+            filename=filename,
+            is_valid=False,
+            error_message=str(e),
+            validation_time_ms=validation_time,
+            correlation_id=correlation_id
+        )
+        
+        app_logger.warning(f"PDF validation failed for {filename}: {str(e)}")
+        raise
 
 async def save_temp_file(file: UploadFile, prefix: str = "n8n_pdf_") -> str:
     """Save uploaded file to temporary location with enhanced security."""
+    correlation_id = get_correlation_id()
+    filename = file.filename or "unknown.pdf"
+    
     try:
         # Ensure temp directory exists
         os.makedirs(settings.TEMP_DIR, exist_ok=True)
@@ -95,7 +141,7 @@ async def save_temp_file(file: UploadFile, prefix: str = "n8n_pdf_") -> str:
         content = await file.read()
         
         # Sanitize the original filename for logging purposes
-        safe_filename = sanitize_filename(file.filename or "unknown.pdf")
+        safe_filename = sanitize_filename(filename)
         
         # Create temporary file with secure permissions
         with tempfile.NamedTemporaryFile(
@@ -111,7 +157,19 @@ async def save_temp_file(file: UploadFile, prefix: str = "n8n_pdf_") -> str:
         # Set restrictive permissions (readable/writable by owner only)
         os.chmod(temp_path, 0o600)
         
-        logger.info(f"Saved temporary file: {safe_filename} -> {temp_path} ({len(content)} bytes)")
+        app_logger.info(
+            f"Saved temporary file: {safe_filename} -> {temp_path} ({len(content)} bytes)",
+            extra={
+                "extra_fields": {
+                    "correlation_id": correlation_id,
+                    "type": "temp_file_save",
+                    "original_filename": filename,
+                    "temp_path": temp_path,
+                    "file_size_bytes": len(content)
+                }
+            }
+        )
+        
         return temp_path
             
     except Exception as e:

@@ -17,17 +17,17 @@ def test_health_check():
     data = response.json()
     assert data["status"] == "healthy"
     assert data["service"] == "n8n-tools-api"
-    assert data["version"] == "0.1.0"
+    assert data["version"] == "1.0.0"
 
 def test_root_endpoint():
     """Test root endpoint."""
     response = client.get("/")
     assert response.status_code == 200
     data = response.json()
-    assert data["message"] == "N8N Tools API"
-    assert data["version"] == "0.1.0"
-    assert "/docs" in data["docs"]
-    assert "/health" in data["health"]
+    assert data["message"] == "N8N Tools API - PDF Manipulation Service"
+    assert data["version"] == "1.0.0"
+    assert "/docs" in data["documentation"]["interactive_docs"]
+    assert "/health" in data["endpoints"]["health"]
 
 def test_pdf_service_status():
     """Test PDF service status endpoint."""
@@ -51,9 +51,9 @@ def test_pdf_split_placeholder():
 def test_pdf_merge_placeholder():
     """Test PDF merge placeholder endpoint."""
     response = client.post("/api/v1/pdf/merge")
-    assert response.status_code == 501  # Not implemented yet
+    assert response.status_code == 422  # Validation error - missing files
     data = response.json()
-    assert "coming soon" in data["message"]
+    assert "error" in data  # Custom error response format
 
 def test_openapi_docs():
     """Test that OpenAPI docs are available."""

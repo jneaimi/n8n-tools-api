@@ -1,0 +1,120 @@
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--disable-warnings",
+    "--tb=short",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html:tests/coverage",
+    "--cov-report=xml:tests/coverage.xml",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+markers = [
+    "unit: Unit tests for individual components",
+    "integration: Integration tests for API endpoints",
+    "docker: Docker container tests",
+    "slow: Tests that take a long time to run",
+    "performance: Performance and load tests",
+    "security: Security-related tests",
+]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/venv/*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+    "*/alembic/*",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+show_missing = true
+skip_covered = false
+precision = 2
+
+[tool.coverage.html]
+directory = "tests/coverage"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+line_length = 88
+known_first_party = ["app"]
+known_third_party = ["fastapi", "pydantic", "pytest"]
+
+[tool.mypy]
+python_version = "3.9"
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "E501", "W503"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv",
+    ".eggs",
+    "*.egg",
+]
