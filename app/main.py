@@ -15,7 +15,7 @@ from app.api.routes import pdf
 from app.core.config import settings
 from app.core.errors import setup_exception_handlers
 from app.core.logging import RequestLoggingMiddleware, setup_logging, app_logger
-from app.ai_pdf_ops.config import ai_pdf_config
+# AI PDF operations disabled - removed ai_pdf_ops import
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
@@ -252,17 +252,8 @@ Use the interactive documentation below to explore all available endpoints.
                 }
             })
             
-            # Validate that Mistral API key is configured if AI features are enabled
-            if (ai_pdf_config.ocr_enabled or 
-                ai_pdf_config.vision_enabled or 
-                ai_pdf_config.embeddings_enabled):
-                
-                if not ai_pdf_config.mistral_api_key:
-                    app_logger.warning("AI PDF operations are enabled but Mistral API key is not configured")
-                else:
-                    app_logger.info("AI PDF operations configured successfully")
-            else:
-                app_logger.info("AI PDF operations are disabled")
+            # AI PDF operations temporarily disabled
+            app_logger.info("AI PDF operations are disabled")
                 
         except Exception as e:
             app_logger.error(f"Error during AI PDF operations startup validation: {str(e)}", exc_info=True)
