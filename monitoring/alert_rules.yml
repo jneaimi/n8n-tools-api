@@ -1,0 +1,120 @@
+# Alert Rules for N8N Tools API
+groups:
+- name: n8n-tools-api
+  rules:
+  
+  # Service Health Alerts
+  - alert: N8NToolsAPIDown
+    expr: up{job="n8n-tools-api"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      title: "N8N Tools API is down"
+      description: "N8N Tools API has been down for more than 1 minute"
+
+  - alert: N8NToolsAPIHealthCheckFailed
+    expr: probe_success{job="n8n-tools-api"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      title: "N8N Tools API health check failed"
+      description: "Health check has been failing for more than 2 minutes"
+
+  # Performance Alerts
+  - alert: N8NToolsAPIHighErrorRate
+    expr: rate(http_requests_total{job="n8n-tools-api",status=~"5.."}[5m]) > 0.05
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      title: "High error rate detected"
+      description: "Error rate is above 5% for the last 5 minutes"
+
+  - alert: N8NToolsAPISlowResponse
+    expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="n8n-tools-api"}[5m])) > 30
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      title: "Slow response times detected"
+      description: "95th percentile response time is above 30 seconds"
+
+  # Resource Alerts
+  - alert: N8NToolsAPIHighCPU
+    expr: rate(container_cpu_usage_seconds_total{name="n8n-tools-api"}[5m]) * 100 > 80
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      title: "High CPU usage"
+      description: "CPU usage is above 80% for more than 10 minutes"
+
+  - alert: N8NToolsAPIHighMemory
+    expr: (container_memory_usage_bytes{name="n8n-tools-api"} / container_spec_memory_limit_bytes{name="n8n-tools-api"}) * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      title: "High memory usage"
+      description: "Memory usage is above 85% of the limit"
+
+  - alert: N8NToolsAPIHighDiskUsage
+    expr: (1 - (node_filesystem_avail_bytes{mountpoint="/tmp"} / node_filesystem_size_bytes{mountpoint="/tmp"})) * 100 > 90
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      title: "High disk usage in temp directory"
+      description: "Temp directory usage is above 90%"
+
+  # Container Alerts
+  - alert: N8NToolsAPIContainerRestarting
+    expr: rate(container_last_seen{name="n8n-tools-api"}[5m]) > 0
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      title: "Container is restarting frequently"
+      description: "Container has been restarting more than normal"
+
+  - alert: N8NToolsAPIContainerKilled
+    expr: rate(container_last_seen{name="n8n-tools-api"}[1m]) == 0 and time() - container_last_seen{name="n8n-tools-api"} > 60
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      title: "Container killed unexpectedly"
+      description: "Container was killed and hasn't restarted"
+
+# System-level alerts
+- name: system
+  rules:
+  
+  - alert: HostHighCPU
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      title: "Host CPU usage is high"
+      description: "Host CPU usage is above 80%"
+
+  - alert: HostHighMemory
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      title: "Host memory usage is high"
+      description: "Host memory usage is above 85%"
+
+  - alert: HostDiskSpaceLow
+    expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      title: "Host disk space is low"
+      description: "Disk space usage is above 85%"
