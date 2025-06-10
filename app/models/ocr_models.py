@@ -58,17 +58,50 @@ class OCROptions(BaseModel):
     )
 
 class OCRImage(BaseModel):
-    """Model for extracted images."""
+    """Model for extracted images with enhanced Mistral native extraction support."""
     
     id: str = Field(..., description="Unique identifier for the image")
-    format: str = Field(..., description="Image format (e.g., 'png', 'jpeg')")
-    size: Dict[str, int] = Field(..., description="Image dimensions (width, height)")
-    data: str = Field(..., description="Base64 encoded image data or URL")
+    sequence_number: Optional[int] = Field(None, description="Global sequence number across all pages")
     page_number: Optional[int] = Field(None, description="Page number where image was found")
+    
+    # Enhanced coordinate information
+    coordinates: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Enhanced coordinate information including absolute, relative, and dimensions"
+    )
+    
+    # Backward compatibility fields
+    format: Optional[str] = Field(None, description="Image format (e.g., 'png', 'jpeg')")
+    size: Optional[Dict[str, int]] = Field(None, description="Image dimensions (width, height)")
+    data: Optional[str] = Field(None, description="Base64 encoded image data")
     position: Optional[Dict[str, float]] = Field(
         None, 
-        description="Relative position on page (x, y, width, height as percentages)"
+        description="Relative position on page (x, y, width, height as percentages) - legacy field"
     )
+    
+    # Enhanced Mistral native fields
+    base64_data: Optional[str] = Field(None, description="Base64 encoded image data from Mistral")
+    annotation: Optional[str] = Field(None, description="Image annotation or description")
+    extraction_quality: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Quality assessment of the extraction"
+    )
+    format_info: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Detailed format information and characteristics"
+    )
+    size_info: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Detailed size and compression information"
+    )
+    extraction_metadata: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Metadata about the extraction process and source"
+    )
+    
+    class Config:
+        """Pydantic config."""
+        extra = "allow"  # Allow additional fields for future extensibility
 
 class OCRMetadata(BaseModel):
     """Model for document metadata."""
@@ -83,6 +116,10 @@ class OCRMetadata(BaseModel):
     page_count: Optional[int] = Field(None, description="Total number of pages")
     file_size: Optional[int] = Field(None, description="File size in bytes")
     language: Optional[str] = Field(None, description="Detected language")
+    
+    class Config:
+        """Pydantic config."""
+        extra = "allow"  # Allow additional metadata fields
 
 class OCRProcessingInfo(BaseModel):
     """Model for processing information."""
@@ -97,6 +134,10 @@ class OCRProcessingInfo(BaseModel):
         le=1.0
     )
     pages_processed: int = Field(..., description="Number of pages processed")
+    
+    class Config:
+        """Pydantic config."""
+        extra = "allow"  # Allow additional fields for enhanced processing info
 
 class OCRResponse(BaseModel):
     """Response model for OCR operations."""
@@ -113,6 +154,10 @@ class OCRResponse(BaseModel):
         description="Document metadata (if include_metadata is True)"
     )
     processing_info: OCRProcessingInfo = Field(..., description="Processing information")
+    
+    class Config:
+        """Pydantic config."""
+        extra = "allow"  # Allow additional fields for validation info and other enhancements
 
 class OCRErrorResponse(BaseModel):
     """Error response model for OCR operations."""

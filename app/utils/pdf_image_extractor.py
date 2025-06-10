@@ -1,11 +1,53 @@
 """
-PDF Image Extraction Utility.
+PDF Image Extraction Utility - DEPRECATED
 
+⚠️  DEPRECATION WARNING: This module is deprecated as of the migration to Mistral AI's native image extraction.
+⚠️  
+⚠️  The n8n-tools service now uses Mistral AI's built-in image extraction capabilities which provide:
+⚠️  - Better accuracy and quality
+⚠️  - Native coordinate information  
+⚠️  - Improved performance
+⚠️  - Consistent API integration
+⚠️
+⚠️  This module is kept for backward compatibility and emergency fallback only.
+⚠️  It will be removed in a future version.
+⚠️
+⚠️  For new implementations, use the Mistral OCR service directly via:
+⚠️  - app.services.mistral_service.MistralOCRService
+⚠️  - The process_mistral_ocr_response() method provides enhanced image extraction
+⚠️
+⚠️  MIGRATION GUIDE:
+⚠️  
+⚠️  OLD (deprecated):
+⚠️    from app.utils.pdf_image_extractor import PDFImageExtractor
+⚠️    extractor = PDFImageExtractor()
+⚠️    images = extractor.extract_images_from_pdf(pdf_content)
+⚠️  
+⚠️  NEW (recommended):
+⚠️    from app.services.mistral_service import MistralOCRService
+⚠️    service = MistralOCRService()
+⚠️    result = await service.process_file_ocr(
+⚠️        file_content=pdf_content,
+⚠️        filename="document.pdf",
+⚠️        api_key="your_mistral_key",
+⚠️        options={'include_image_base64': True}
+⚠️    )
+⚠️    images = result['pages'][page_num]['images']  # Enhanced format
+⚠️
+⚠️  Benefits of migration:
+⚠️  - Native API integration with better accuracy
+⚠️  - Enhanced coordinate and position data
+⚠️  - Quality assessment and confidence scoring
+⚠️  - Better format detection and metadata
+⚠️  - Improved performance and reliability
+
+Legacy PDF image extraction utility.
 Extracts images directly from PDF files when OCR APIs don't provide them.
 """
 
 import base64
 import io
+import warnings
 from typing import List, Dict, Any, Optional, Tuple
 from pypdf import PdfReader
 import fitz  # PyMuPDF for better image extraction
@@ -14,16 +56,49 @@ import re
 
 from app.core.logging import app_logger
 
+# Issue deprecation warning when this module is imported
+warnings.warn(
+    "PDFImageExtractor is deprecated. Use Mistral AI's native image extraction instead. "
+    "This module will be removed in a future version. "
+    "See app.services.mistral_service.MistralOCRService for the recommended approach.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 
 class PDFImageExtractor:
-    """Extract images directly from PDF files."""
+    """
+    DEPRECATED: Extract images directly from PDF files.
+    
+    ⚠️ WARNING: This class is deprecated and will be removed in a future version.
+    ⚠️ Use Mistral AI's native image extraction instead via MistralOCRService.
+    ⚠️ 
+    ⚠️ Migration path:
+    ⚠️ - Replace PDFImageExtractor usage with MistralOCRService
+    ⚠️ - Use process_mistral_ocr_response() for enhanced image data
+    ⚠️ - Leverage Mistral's native coordinate and quality information
+    """
     
     def __init__(self):
+        """Initialize the DEPRECATED PDF Image Extractor."""
+        warnings.warn(
+            "PDFImageExtractor is deprecated. Use MistralOCRService instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.supported_formats = ['jpeg', 'jpg', 'png', 'tiff', 'bmp']
+        
+        app_logger.warning(
+            "DEPRECATED: PDFImageExtractor is being used. "
+            "This will be removed in a future version. "
+            "Migrate to MistralOCRService for better image extraction."
+        )
     
     def extract_images_from_pdf(self, pdf_content: bytes, min_size: int = 50) -> List[Dict[str, Any]]:
         """
-        Extract images directly from PDF content.
+        DEPRECATED: Extract images directly from PDF content.
+        
+        ⚠️ WARNING: This method is deprecated. Use MistralOCRService.process_file_ocr() instead.
         
         Args:
             pdf_content: PDF file content as bytes
@@ -32,6 +107,16 @@ class PDFImageExtractor:
         Returns:
             List of extracted image objects with base64 data
         """
+        warnings.warn(
+            "extract_images_from_pdf() is deprecated. Use MistralOCRService.process_file_ocr() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        app_logger.warning(
+            "DEPRECATED METHOD CALLED: extract_images_from_pdf(). "
+            "This method will be removed. Use MistralOCRService instead."
+        )
         try:
             extracted_images = []
             
@@ -129,7 +214,9 @@ class PDFImageExtractor:
     
     def fallback_extract_with_pypdf(self, pdf_content: bytes) -> List[Dict[str, Any]]:
         """
-        Fallback image extraction using PyPDF (less reliable but more compatible).
+        DEPRECATED: Fallback image extraction using PyPDF (less reliable but more compatible).
+        
+        ⚠️ WARNING: This method is deprecated. Use MistralOCRService.process_file_ocr() instead.
         
         Args:
             pdf_content: PDF file content as bytes
@@ -137,6 +224,16 @@ class PDFImageExtractor:
         Returns:
             List of extracted image objects
         """
+        warnings.warn(
+            "fallback_extract_with_pypdf() is deprecated. Use MistralOCRService.process_file_ocr() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        app_logger.warning(
+            "DEPRECATED METHOD CALLED: fallback_extract_with_pypdf(). "
+            "This method will be removed. Use MistralOCRService instead."
+        )
         try:
             extracted_images = []
             reader = PdfReader(io.BytesIO(pdf_content))

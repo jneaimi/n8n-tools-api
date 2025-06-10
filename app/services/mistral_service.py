@@ -8,6 +8,7 @@ import aiohttp
 import asyncio
 import base64
 import logging
+import math
 import time
 from typing import Dict, Any, Optional, Union, List
 import json
@@ -134,6 +135,9 @@ class MistralOCRService:
             
             # Create data URL
             data_url = f"data:{mime_type};base64,{base64_content}"
+            
+            # Debug: Log successful base64 encoding
+            app_logger.debug(f"File {filename} encoded to base64: {mime_type}, size: {len(base64_content)} chars")
             
             return data_url
             
@@ -286,11 +290,14 @@ class MistralOCRService:
             # Prepare file data
             data_url = self._prepare_file_data(file_content, filename)
             
-            # Set default options
+            # Debug: Log base64 preparation (first 100 chars to verify encoding)
+            app_logger.debug(f"Base64 data URL prepared: {data_url[:100]}... (length: {len(data_url)})")
+            
+            # Set optimized default options for native image extraction
             default_options = {
                 'include_image_base64': True,
-                'image_limit': 10,
-                'image_min_size': 50,
+                'image_limit': 50,  # Increased limit for better extraction
+                'image_min_size': 30,  # Lower minimum size to capture more images
                 'pages': None  # Process all pages by default
             }
             
@@ -320,7 +327,8 @@ class MistralOCRService:
             api_response = await self._make_api_request(api_key, payload)
             
             # Process and structure the response
-            processed_result = self._process_ocr_response(api_response, filename)
+            # Use official Mistral API format for better compatibility
+            processed_result = self._process_ocr_response_official_format(api_response, filename)
             
             # Calculate processing time
             processing_time = (time.time() - start_time) * 1000
@@ -396,11 +404,11 @@ class MistralOCRService:
             if not parsed_url.scheme or not parsed_url.netloc:
                 raise MistralAIError("Invalid document URL format")
             
-            # Set default options
+            # Set optimized default options for native image extraction
             default_options = {
                 'include_image_base64': True,
-                'image_limit': 10,
-                'image_min_size': 50,
+                'image_limit': 50,  # Increased limit for better extraction
+                'image_min_size': 30,  # Lower minimum size to capture more images
                 'pages': None
             }
             
@@ -429,7 +437,8 @@ class MistralOCRService:
             api_response = await self._make_api_request(api_key, payload)
             
             # Process and structure the response
-            processed_result = self._process_ocr_response(api_response, document_url)
+            # Use official Mistral API format for better compatibility
+            processed_result = self._process_ocr_response_official_format(api_response, document_url)
             
             # Calculate processing time
             processing_time = (time.time() - start_time) * 1000
@@ -458,45 +467,88 @@ class MistralOCRService:
         Returns:
             Structured response compatible with the application
         """
+        return self.process_mistral_ocr_response(api_response, source_identifier)
+    
+    def process_mistral_ocr_response(self, api_response: Dict[str, Any], source_identifier: str) -> Dict[str, Any]:
+        """
+        Enhanced processing of Mistral AI OCR response with native image extraction.
+        
+        This function processes the OCR response from Mistral AI, extracting and handling images
+        that are directly provided in the response. It replaces custom PDF image extraction logic
+        with Mistral's built-in capability.
+        
+        Args:
+            api_response: The JSON response from Mistral AI's OCR API
+            source_identifier: File name or URL for context
+            
+        Returns:
+            Processed OCR result with properly handled images and enhanced metadata
+        """
         try:
+            app_logger.info(f"Processing Mistral OCR response for {source_identifier}")
+            
             processed_pages = []
             extracted_images = []
             total_text_length = 0
+            image_counter = 1
             
-            # Process each page
-            for page in api_response.get('pages', []):
+            # Validate API response structure
+            if not isinstance(api_response, dict):
+                raise ValueError("Invalid API response: expected dictionary")
+            
+            pages = api_response.get('pages', [])
+            if not isinstance(pages, list):
+                app_logger.warning("Invalid pages structure in API response")
+                pages = []
+            
+            # Process each page with enhanced image handling
+            for page_index, page in enumerate(pages):
+                if not isinstance(page, dict):
+                    app_logger.warning(f"Skipping invalid page data at index {page_index}")
+                    continue
+                
+                page_number = page.get('index', page_index) + 1  # Convert to 1-based indexing
+                page_text = page.get('markdown', '') or page.get('text', '')
+                page_dimensions = page.get('dimensions', {})
+                
                 page_data = {
-                    'page_number': page.get('index', 0) + 1,  # Convert to 1-based indexing
-                    'text': page.get('markdown', ''),
-                    'dimensions': page.get('dimensions', {}),
+                    'page_number': page_number,
+                    'text': page_text,
+                    'dimensions': page_dimensions,
                     'images': []
                 }
                 
-                total_text_length += len(page_data['text'])
+                total_text_length += len(page_text)
                 
-                # Process images on this page
-                for image in page.get('images', []):
-                    image_data = {
-                        'id': image.get('id'),
-                        'coordinates': {
-                            'top_left_x': image.get('top_left_x'),
-                            'top_left_y': image.get('top_left_y'),
-                            'bottom_right_x': image.get('bottom_right_x'),
-                            'bottom_right_y': image.get('bottom_right_y')
-                        },
-                        'base64_data': image.get('image_base64'),
-                        'annotation': image.get('image_annotation')
-                    }
-                    
-                    page_data['images'].append(image_data)
-                    extracted_images.append(image_data)
+                # Enhanced image processing from Mistral's native extraction
+                page_images = page.get('images', [])
+                if not isinstance(page_images, list):
+                    app_logger.warning(f"Invalid images structure on page {page_number}")
+                    page_images = []
+                
+                for image_index, image in enumerate(page_images):
+                    try:
+                        # Enhanced image data extraction
+                        image_data = self._extract_enhanced_image_data(
+                            image, page_number, image_counter, page_dimensions
+                        )
+                        
+                        if image_data:
+                            page_data['images'].append(image_data)
+                            extracted_images.append(image_data)
+                            image_counter += 1
+                            
+                    except Exception as e:
+                        app_logger.warning(f"Failed to process image {image_index + 1} on page {page_number}: {str(e)}")
+                        continue
                 
                 processed_pages.append(page_data)
+                app_logger.debug(f"Processed page {page_number}: {len(page_text)} chars, {len(page_data['images'])} images")
             
-            # Extract usage information
+            # Extract enhanced usage information
             usage_info = api_response.get('usage_info', {})
             
-            # Create structured result
+            # Create structured result with enhanced metadata
             result = {
                 'status': 'success',
                 'source': source_identifier,
@@ -506,25 +558,348 @@ class MistralOCRService:
                 'total_text_length': total_text_length,
                 'total_images_extracted': len(extracted_images),
                 'pages': processed_pages,
-                'document_annotation': api_response.get('document_annotation'),
+                'document_annotation': api_response.get('document_annotation', ''),
                 'processing_metadata': {
                     'api_version': 'v1',
                     'service_provider': 'mistral-ai',
                     'extraction_timestamp': time.time(),
+                    'extraction_method': 'mistral_native',
                     'features_used': {
                         'text_extraction': True,
                         'image_extraction': len(extracted_images) > 0,
                         'structure_preservation': True,
-                        'markdown_formatting': True
+                        'markdown_formatting': True,
+                        'native_coordinates': True
+                    },
+                    'image_extraction_stats': {
+                        'total_images': len(extracted_images),
+                        'images_with_base64': sum(1 for img in extracted_images if img.get('base64_data')),
+                        'images_with_coordinates': sum(1 for img in extracted_images if img.get('coordinates')),
+                        'average_images_per_page': len(extracted_images) / max(len(processed_pages), 1),
+                        'extraction_quality_score': self._calculate_extraction_quality_score(extracted_images),
+                        'extraction_warnings': self._get_extraction_warnings(extracted_images, processed_pages)
                     }
                 }
             }
             
+            app_logger.info(f"Successfully processed Mistral OCR response: {total_text_length} chars, {len(extracted_images)} images")
             return result
             
         except Exception as e:
-            app_logger.error(f"Failed to process OCR response: {str(e)}")
+            app_logger.error(f"Failed to process Mistral OCR response: {str(e)}")
             raise MistralAIError(f"Failed to process API response: {str(e)}")
+    
+    def _extract_enhanced_image_data(
+        self, 
+        image: Dict[str, Any], 
+        page_number: int, 
+        sequence_number: int,
+        page_dimensions: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract and enhance image data from Mistral's native response.
+        
+        Args:
+            image: Raw image data from Mistral API
+            page_number: Current page number (1-based)
+            sequence_number: Global image sequence number
+            page_dimensions: Page dimension information
+            
+        Returns:
+            Enhanced image data object or None if invalid
+        """
+        try:
+            if not isinstance(image, dict):
+                app_logger.warning("Invalid image data structure")
+                return None
+            
+            # Extract basic image information
+            image_id = image.get('id', f"mistral_img_{page_number}_{sequence_number}")
+            annotation = image.get('image_annotation', '') or image.get('annotation', '')
+            
+            # Extract and validate base64 data
+            base64_data = image.get('image_base64', '') or image.get('base64_data', '')
+            if base64_data and not self._validate_base64_data(base64_data):
+                app_logger.warning(f"Invalid base64 data for image {image_id}")
+                base64_data = None
+            
+            # Extract and normalize coordinates
+            coordinates = self._extract_image_coordinates(image, page_dimensions)
+            
+            # Determine image quality and characteristics
+            quality_info = self._assess_mistral_image_quality(image, base64_data)
+            
+            # Create enhanced image data object with backward compatibility
+            enhanced_image = {
+                # Enhanced Mistral native fields
+                'id': image_id,
+                'sequence_number': sequence_number,
+                'page_number': page_number,
+                'coordinates': coordinates,
+                'annotation': annotation,
+                'base64_data': base64_data,
+                'extraction_quality': quality_info,
+                'format_info': self._detect_image_format_from_base64(base64_data) if base64_data else {},
+                'size_info': self._calculate_image_size_info(base64_data) if base64_data else {},
+                'extraction_metadata': {
+                    'source': 'mistral_native',
+                    'extraction_method': 'api_response',
+                    'has_coordinates': bool(coordinates),
+                    'has_annotation': bool(annotation.strip()),
+                    'has_image_data': bool(base64_data)
+                },
+                
+                # Backward compatibility fields for existing code
+                'data': base64_data,  # Legacy field name for base64_data
+                'format': self._detect_image_format_from_base64(base64_data).get('detected_format', 'unknown') if base64_data else 'unknown',
+                'size': self._extract_legacy_size_info(base64_data, coordinates),
+                'position': self._extract_legacy_position_info(coordinates)
+            }
+            
+            return enhanced_image
+            
+        except Exception as e:
+            app_logger.warning(f"Failed to extract enhanced image data: {str(e)}")
+            return None
+    
+    def _extract_image_coordinates(self, image: Dict[str, Any], page_dimensions: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract and normalize image coordinates from Mistral response.
+        
+        Args:
+            image: Raw image data from Mistral
+            page_dimensions: Page dimension information
+            
+        Returns:
+            Normalized coordinate information
+        """
+        coordinates = {}
+        
+        # Extract raw coordinates with multiple possible field names
+        raw_coords = {
+            'top_left_x': image.get('top_left_x') or image.get('x1') or image.get('left'),
+            'top_left_y': image.get('top_left_y') or image.get('y1') or image.get('top'),
+            'bottom_right_x': image.get('bottom_right_x') or image.get('x2') or image.get('right'),
+            'bottom_right_y': image.get('bottom_right_y') or image.get('y2') or image.get('bottom')
+        }
+        
+        # Check if we have valid coordinate data
+        if all(coord is not None for coord in raw_coords.values()):
+            coordinates['absolute'] = raw_coords
+            
+            # Calculate relative coordinates if page dimensions are available
+            if page_dimensions and 'width' in page_dimensions and 'height' in page_dimensions:
+                page_width = float(page_dimensions['width'])
+                page_height = float(page_dimensions['height'])
+                
+                if page_width > 0 and page_height > 0:
+                    try:
+                        x1_percent = (float(raw_coords['top_left_x']) / page_width) * 100
+                        y1_percent = (float(raw_coords['top_left_y']) / page_height) * 100
+                        x2_percent = (float(raw_coords['bottom_right_x']) / page_width) * 100
+                        y2_percent = (float(raw_coords['bottom_right_y']) / page_height) * 100
+                        
+                        # Ensure values are finite and valid
+                        if all(isinstance(x, (int, float)) and not (math.isnan(x) or math.isinf(x)) 
+                               for x in [x1_percent, y1_percent, x2_percent, y2_percent]):
+                            
+                            coordinates['relative'] = {
+                                'x1_percent': x1_percent,
+                                'y1_percent': y1_percent,
+                                'x2_percent': x2_percent,
+                                'y2_percent': y2_percent
+                            }
+                            
+                            # Calculate dimensions with validation
+                            width = float(raw_coords['bottom_right_x']) - float(raw_coords['top_left_x'])
+                            height = float(raw_coords['bottom_right_y']) - float(raw_coords['top_left_y'])
+                            area_percent = max(0, (x2_percent - x1_percent) * (y2_percent - y1_percent) / 100)
+                            
+                            coordinates['dimensions'] = {
+                                'width': max(0, width),
+                                'height': max(0, height),
+                                'area_percent': min(100, area_percent)  # Cap at 100%
+                            }
+                    except (ValueError, ZeroDivisionError, TypeError) as e:
+                        app_logger.warning(f"Failed to calculate relative coordinates: {str(e)}")
+                        # Continue without relative coordinates
+        
+        return coordinates
+    
+    def _validate_base64_data(self, base64_data: str) -> bool:
+        """
+        Validate base64 image data from Mistral response.
+        
+        Args:
+            base64_data: Base64 encoded image data
+            
+        Returns:
+            True if valid base64 image data
+        """
+        if not base64_data or not isinstance(base64_data, str):
+            return False
+        
+        try:
+            import base64
+            # Remove any data URL prefix if present
+            if base64_data.startswith('data:'):
+                base64_data = base64_data.split(',', 1)[-1]
+            
+            decoded = base64.b64decode(base64_data, validate=True)
+            
+            # Check minimum size (should be more than just a few bytes)
+            if len(decoded) < 100:
+                return False
+            
+            # Basic image format validation
+            image_signatures = [
+                b'\xff\xd8\xff',  # JPEG
+                b'\x89PNG\r\n\x1a\n',  # PNG
+                b'GIF8',  # GIF
+                b'RIFF',  # WebP (starts with RIFF)
+                b'BM',  # BMP
+            ]
+            
+            return any(decoded.startswith(sig) for sig in image_signatures)
+            
+        except Exception:
+            return False
+    
+    def _assess_mistral_image_quality(self, image: Dict[str, Any], base64_data: Optional[str]) -> Dict[str, Any]:
+        """
+        Assess the quality of image data from Mistral response.
+        
+        Args:
+            image: Raw image data from Mistral
+            base64_data: Base64 image data (if available)
+            
+        Returns:
+            Quality assessment information
+        """
+        quality = {
+            'confidence': 0.9,  # High confidence for Mistral native extraction
+            'completeness': 'complete',
+            'clarity': 'excellent',
+            'source_quality': 'native_api'
+        }
+        
+        # Adjust confidence based on available data
+        if not base64_data:
+            quality['confidence'] = 0.7
+            quality['completeness'] = 'coordinates_only'
+        
+        if not image.get('image_annotation', '').strip():
+            quality['confidence'] -= 0.1
+        
+        # Coordinate precision assessment
+        coords = image.get('top_left_x'), image.get('top_left_y'), image.get('bottom_right_x'), image.get('bottom_right_y')
+        if all(coord is not None for coord in coords):
+            if all(isinstance(coord, (int, float)) for coord in coords):
+                quality['coordinate_precision'] = 'high' if any(isinstance(c, float) for c in coords) else 'standard'
+            else:
+                quality['coordinate_precision'] = 'low'
+                quality['confidence'] -= 0.2
+        else:
+            quality['coordinate_precision'] = 'none'
+            quality['confidence'] -= 0.3
+        
+        quality['confidence'] = max(0.0, min(1.0, quality['confidence']))
+        return quality
+    
+    def _detect_image_format_from_base64(self, base64_data: str) -> Dict[str, Any]:
+        """
+        Detect image format from base64 data.
+        
+        Args:
+            base64_data: Base64 encoded image data
+            
+        Returns:
+            Format detection information
+        """
+        format_info = {
+            'detected_format': 'unknown',
+            'mime_type': 'image/unknown',
+            'has_transparency': False,
+            'compression': 'unknown'
+        }
+        
+        if not base64_data:
+            return format_info
+        
+        try:
+            # Remove data URL prefix if present
+            if base64_data.startswith('data:'):
+                base64_data = base64_data.split(',', 1)[-1]
+            
+            # Check format by base64 signature patterns
+            if base64_data.startswith('/9j/'):
+                format_info.update({
+                    'detected_format': 'jpeg',
+                    'mime_type': 'image/jpeg',
+                    'compression': 'lossy'
+                })
+            elif base64_data.startswith('iVBORw0KGgo'):
+                format_info.update({
+                    'detected_format': 'png',
+                    'mime_type': 'image/png',
+                    'has_transparency': True,
+                    'compression': 'lossless'
+                })
+            elif base64_data.startswith('R0lGODlh') or base64_data.startswith('R0lGODdh'):
+                format_info.update({
+                    'detected_format': 'gif',
+                    'mime_type': 'image/gif',
+                    'has_transparency': True,
+                    'compression': 'lossless'
+                })
+            elif base64_data.startswith('UklGR'):
+                format_info.update({
+                    'detected_format': 'webp',
+                    'mime_type': 'image/webp',
+                    'compression': 'variable'
+                })
+            elif base64_data.startswith('Qk'):
+                format_info.update({
+                    'detected_format': 'bmp',
+                    'mime_type': 'image/bmp',
+                    'compression': 'none'
+                })
+            
+        except Exception as e:
+            app_logger.debug(f"Could not detect image format: {str(e)}")
+        
+        return format_info
+    
+    def _calculate_image_size_info(self, base64_data: str) -> Dict[str, Any]:
+        """
+        Calculate size information from base64 image data.
+        
+        Args:
+            base64_data: Base64 encoded image data
+            
+        Returns:
+            Size information dictionary
+        """
+        try:
+            import base64
+            
+            # Remove data URL prefix if present
+            if base64_data.startswith('data:'):
+                base64_data = base64_data.split(',', 1)[-1]
+            
+            decoded = base64.b64decode(base64_data)
+            
+            return {
+                'base64_length': len(base64_data),
+                'data_size_bytes': len(decoded),
+                'data_size_kb': round(len(decoded) / 1024, 2),
+                'data_size_mb': round(len(decoded) / (1024 * 1024), 3),
+                'compression_ratio': round(len(decoded) / len(base64_data), 2)
+            }
+            
+        except Exception as e:
+            app_logger.debug(f"Could not calculate image size info: {str(e)}")
+            return {}
     
     async def test_api_key(self, api_key: str) -> Dict[str, Any]:
         """
@@ -589,6 +964,138 @@ class MistralOCRService:
         finally:
             await self._close_session()
     
+    def _calculate_extraction_quality_score(self, extracted_images: List[Dict[str, Any]]) -> float:
+        """
+        Calculate overall extraction quality score based on image data completeness.
+        
+        Args:
+            extracted_images: List of extracted image objects
+            
+        Returns:
+            Quality score between 0.0 and 1.0
+        """
+        if not extracted_images:
+            return 0.0
+        
+        total_score = 0.0
+        for image in extracted_images:
+            image_score = 0.0
+            
+            # Base64 data availability (40% weight)
+            if image.get('base64_data'):
+                image_score += 0.4
+            
+            # Coordinates availability (30% weight)
+            if image.get('coordinates'):
+                image_score += 0.3
+            
+            # Annotation availability (20% weight)
+            if image.get('annotation', '').strip():
+                image_score += 0.2
+            
+            # Extraction quality confidence (10% weight)
+            quality = image.get('extraction_quality', {})
+            confidence = quality.get('confidence', 0.0)
+            image_score += confidence * 0.1
+            
+            total_score += image_score
+        
+        return total_score / len(extracted_images)
+    
+    def _get_extraction_warnings(self, extracted_images: List[Dict[str, Any]], processed_pages: List[Dict[str, Any]]) -> List[str]:
+        """
+        Generate warnings about potential image extraction issues.
+        
+        Args:
+            extracted_images: List of extracted image objects
+            processed_pages: List of processed page objects
+            
+        Returns:
+            List of warning messages
+        """
+        warnings = []
+        
+        # Check if no images were extracted
+        if not extracted_images:
+            warnings.append("No images were extracted from the document by Mistral OCR")
+        
+        # Check for images without base64 data
+        images_without_data = sum(1 for img in extracted_images if not img.get('base64_data'))
+        if images_without_data > 0:
+            warnings.append(f"{images_without_data} images found but without base64 data")
+        
+        # Check for images without coordinates
+        images_without_coords = sum(1 for img in extracted_images if not img.get('coordinates'))
+        if images_without_coords > 0:
+            warnings.append(f"{images_without_coords} images found but without coordinate information")
+        
+        # Check for very low quality images
+        low_quality_images = sum(1 for img in extracted_images 
+                               if img.get('extraction_quality', {}).get('confidence', 1.0) < 0.3)
+        if low_quality_images > 0:
+            warnings.append(f"{low_quality_images} images have low extraction confidence")
+        
+        # Check for pages with text but no images (might indicate missed images)
+        pages_with_text_no_images = sum(1 for page in processed_pages 
+                                      if len(page.get('text', '').strip()) > 100 and len(page.get('images', [])) == 0)
+        if pages_with_text_no_images > 0:
+            warnings.append(f"{pages_with_text_no_images} pages have substantial text but no extracted images")
+        
+        return warnings
+    
+    def _extract_legacy_size_info(self, base64_data: Optional[str], coordinates: Dict[str, Any]) -> Dict[str, int]:
+        """
+        Extract size information in legacy format for backward compatibility.
+        
+        Args:
+            base64_data: Base64 image data
+            coordinates: Coordinate information
+            
+        Returns:
+            Legacy size format (width, height)
+        """
+        # Try to get dimensions from coordinates first
+        if coordinates and 'dimensions' in coordinates:
+            dims = coordinates['dimensions']
+            return {
+                'width': int(dims.get('width', 0)),
+                'height': int(dims.get('height', 0))
+            }
+        
+        # Try to get from size_info if available
+        size_info = self._calculate_image_size_info(base64_data) if base64_data else {}
+        if 'width' in size_info and 'height' in size_info:
+            return {
+                'width': size_info['width'],
+                'height': size_info['height']
+            }
+        
+        # Default fallback
+        return {'width': 0, 'height': 0}
+    
+    def _extract_legacy_position_info(self, coordinates: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        """
+        Extract position information in legacy format for backward compatibility.
+        
+        Args:
+            coordinates: Enhanced coordinate information
+            
+        Returns:
+            Legacy position format (x, y, width, height as percentages) or None
+        """
+        if not coordinates or 'relative' not in coordinates:
+            return None
+        
+        rel_coords = coordinates['relative']
+        
+        # Convert to legacy format (x, y, width, height as percentages 0-100)
+        return {
+            'x': rel_coords.get('x1_percent', 0.0),
+            'y': rel_coords.get('y1_percent', 0.0),
+            'width': rel_coords.get('x2_percent', 0.0) - rel_coords.get('x1_percent', 0.0),
+            'height': rel_coords.get('y2_percent', 0.0) - rel_coords.get('y1_percent', 0.0)
+        }
+    
     def get_service_info(self) -> Dict[str, Any]:
         """
         Get information about the Mistral OCR service capabilities.
@@ -622,3 +1129,91 @@ class MistralOCRService:
             },
             'api_documentation': 'https://docs.mistral.ai/api/#tag/ocr'
         }
+    def _process_ocr_response_official_format(
+        self, 
+        api_response: Dict[str, Any], 
+        source_identifier: str
+    ) -> Dict[str, Any]:
+        """
+        Process Mistral AI OCR response preserving the official API format.
+        
+        This function processes the OCR response from Mistral AI while preserving
+        the exact structure defined in the official API specification.
+        
+        Args:
+            api_response: The JSON response from Mistral AI's OCR API
+            source_identifier: File name or URL for context
+            
+        Returns:
+            OCR result in official Mistral API format
+        """
+        try:
+            app_logger.info(f"Processing Mistral OCR response (official format) for {source_identifier}")
+            
+            # Validate API response structure
+            if not isinstance(api_response, dict):
+                raise ValueError("Invalid API response: expected dictionary")
+            
+            # Preserve the original structure while ensuring all required fields exist
+            official_response = {
+                "pages": [],
+                "model": api_response.get('model', self.MODEL_NAME),
+                "usage_info": {}
+            }
+            
+            # Process pages with official structure
+            pages = api_response.get('pages', [])
+            if isinstance(pages, list):
+                for page in pages:
+                    if isinstance(page, dict):
+                        # Preserve official page structure
+                        official_page = {
+                            "index": page.get('index', 0),
+                            "markdown": page.get('markdown', ''),
+                            "images": [],
+                            "dimensions": page.get('dimensions', {})
+                        }
+                        
+                        # Process images with official structure
+                        page_images = page.get('images', [])
+                        if isinstance(page_images, list):
+                            for image in page_images:
+                                if isinstance(image, dict):
+                                    # Preserve official image structure
+                                    official_image = {
+                                        "id": image.get('id', ''),
+                                        "top_left_x": image.get('top_left_x', 0),
+                                        "top_left_y": image.get('top_left_y', 0), 
+                                        "bottom_right_x": image.get('bottom_right_x', 0),
+                                        "bottom_right_y": image.get('bottom_right_y', 0),
+                                        "image_base64": image.get('image_base64', '')
+                                    }
+                                    
+                                    # Add optional annotation if present
+                                    if 'image_annotation' in image:
+                                        official_image['image_annotation'] = image['image_annotation']
+                                    
+                                    official_page['images'].append(official_image)
+                        
+                        official_response['pages'].append(official_page)
+            
+            # Add usage information
+            usage_info = api_response.get('usage_info', {})
+            official_response['usage_info'] = {
+                "pages_processed": usage_info.get('pages_processed', len(official_response['pages'])),
+                "doc_size_bytes": usage_info.get('doc_size_bytes', 0)
+            }
+            
+            # Add document annotation if present
+            if 'document_annotation' in api_response:
+                official_response['document_annotation'] = api_response['document_annotation']
+            
+            total_images = sum(len(page.get('images', [])) for page in official_response['pages'])
+            app_logger.info(f"Successfully processed Mistral OCR response in official format: "
+                          f"{len(official_response['pages'])} pages, {total_images} images")
+            
+            return official_response
+            
+        except Exception as e:
+            app_logger.error(f"Failed to process Mistral OCR response in official format: {str(e)}")
+            raise MistralAIError(f"Failed to process API response: {str(e)}")

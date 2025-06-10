@@ -246,30 +246,19 @@ class OCRResponseFormatter:
                     app_logger.warning(f"Failed to format image {image_counter} on page {page_number}: {str(e)}")
                     continue
         
-        # Fallback: Extract image references from markdown text if no actual images were found
+        # If no images were found in Mistral response, rely entirely on Mistral's capabilities
         if not formatted_images:
-            formatted_images = self._extract_image_references_from_text(pages)
-            app_logger.info(f"No actual image data found, extracted {len(formatted_images)} image references from text")
+            app_logger.info(f"No images found in Mistral response - relying on Mistral's native extraction capabilities")
             
-            # Try to extract actual images from PDF if we have access to the original file
-            if hasattr(self, '_pdf_content') and self._pdf_content:
-                try:
-                    from app.utils.pdf_image_extractor import PDFImageExtractor
-                    extractor = PDFImageExtractor()
-                    pdf_images = extractor.extract_images_from_pdf(self._pdf_content)
-                    
-                    if pdf_images:
-                        app_logger.info(f"Successfully extracted {len(pdf_images)} images directly from PDF")
-                        # Replace text references with actual extracted images
-                        formatted_images = pdf_images
-                    else:
-                        # Try fallback extraction
-                        pdf_images = extractor.fallback_extract_with_pypdf(self._pdf_content)
-                        if pdf_images:
-                            app_logger.info(f"Fallback extraction found {len(pdf_images)} images from PDF")
-                            formatted_images = pdf_images
-                except Exception as e:
-                    app_logger.warning(f"Direct PDF image extraction failed: {str(e)}")
+            # Extract image references from markdown text as informational fallback only
+            text_references = self._extract_image_references_from_text(pages)
+            if text_references:
+                app_logger.info(f"Found {len(text_references)} image references in text content")
+                formatted_images = text_references
+            else:
+                app_logger.info("No image data or references found in document")
+        
+        app_logger.info(f"Formatted {len(formatted_images)} images using Mistral native extraction")
         
         return formatted_images
     
@@ -309,22 +298,26 @@ class OCRResponseFormatter:
                             'absolute': None,
                             'relative_position': 'unknown'
                         },
-                        'annotation': alt_text or f"Image reference: {filename}",
+                        'annotation': alt_text or f"Text reference to image: {filename}",
                         'extraction_quality': {
-                            'confidence': 0.5,  # Lower confidence for text references
-                            'clarity': 'unknown',
-                            'completeness': 'reference_only'
+                            'confidence': 0.3,  # Lower confidence for text references
+                            'clarity': 'text_reference_only',
+                            'completeness': 'reference_only',
+                            'source': 'markdown_text'
                         },
                         'format_info': {
                             'detected_format': filename.split('.')[-1] if '.' in filename else 'unknown',
                             'mime_type': f"image/{filename.split('.')[-1]}" if '.' in filename else 'image/unknown',
-                            'is_vector': False
+                            'is_vector': False,
+                            'is_text_reference': True
                         },
-                        'base64_data': None,  # No actual image data
+                        'base64_data': None,  # No actual image data - text reference only
                         'size_info': None,
                         'position_analysis': {
                             'text_reference': True,
-                            'filename': filename
+                            'filename': filename,
+                            'extraction_method': 'mistral_text_reference',
+                            'note': 'This is a text reference only - no actual image data was extracted by Mistral'
                         }
                     }
                     

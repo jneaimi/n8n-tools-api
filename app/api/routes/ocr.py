@@ -44,8 +44,7 @@ from app.utils.error_recovery import (
 from app.utils.error_metrics import (
     record_error_metric, record_success_metric, get_health_score
 )
-
-logger = logging.getLogger(__name__)
+from app.core.logging import app_logger
 
 router = APIRouter()
 
@@ -251,7 +250,7 @@ async def ocr_service_status():
             }
         )
     except Exception as e:
-        logger.error(f"Error getting service status: {str(e)}")
+        app_logger.error(f"Error getting service status: {str(e)}")
         return JSONResponse(
             status_code=503,
             content={
@@ -315,7 +314,7 @@ async def ocr_health_metrics():
             }
         )
     except Exception as e:
-        logger.error(f"Error getting health metrics: {str(e)}")
+        app_logger.error(f"Error getting health metrics: {str(e)}")
         return JSONResponse(
             status_code=500,
             content={
@@ -410,7 +409,7 @@ async def process_file_ocr(
         # Get authentication info
         auth_info = get_auth_info(api_key)
         
-        logger.info(f"Processing {file_type.upper()} file for OCR: {file_info['filename']} ({file_info['size_mb']} MB) - Auth: {auth_info['key_hash']}")
+        app_logger.info(f"Processing {file_type.upper()} file for OCR: {file_info['filename']} ({file_info['size_mb']} MB) - Auth: {auth_info['key_hash']}")
         
         # Read file content for processing
         with open(temp_file_path, 'rb') as f:
@@ -419,15 +418,15 @@ async def process_file_ocr(
         # Initialize Mistral OCR service with circuit breaker protection
         mistral_service = MistralOCRService()
         
-        # Prepare processing options
+        # Prepare processing options for Mistral's native image extraction
         processing_options = {
             'include_image_base64': extract_images,
-            'image_limit': 10 if extract_images else 0,
+            'image_limit': 50 if extract_images else 0,  # Increased limit for native extraction
             'image_min_size': 50,
             'pages': None  # Process all pages
         }
         
-        # Process with Mistral OCR with comprehensive error handling
+        # Process with Mistral OCR using native image extraction
         try:
             error_context.add_api_context("mistral_ocr_api")
             
@@ -441,23 +440,55 @@ async def process_file_ocr(
                 timeout=120.0  # 2 minute timeout for processing
             )
             
-            # Initialize response formatter with PDF content for image extraction
-            formatter = OCRResponseFormatter()
-            formatter._pdf_content = file_content  # Store for potential image extraction
+            # Option to return raw Mistral format or formatted response
+            # For now, let's add a simple check - you can make this configurable via request params later
+            return_raw_mistral_format = True  # Set to True to get official Mistral format
             
-            # Format response using enhanced formatter
-            response_data = formatter.format_ocr_response(
-                mistral_response=ocr_result,
-                source_type="file_upload",
-                source_identifier=file_info['filename'],
-                processing_start_time=start_time,
-                include_images=extract_images,
-                include_metadata=include_metadata
-            )
+            if return_raw_mistral_format:
+                # Return the response in official Mistral API format
+                response_data = ocr_result
+                
+                # Add minimal processing info for debugging
+                response_data['n8n_processing_info'] = {
+                    'source_type': 'file_upload',
+                    'source_identifier': file_info['filename'],
+                    'processing_time_ms': (time.time() - start_time) * 1000,
+                    'api_format': 'mistral_official'
+                }
+            else:
+                # Use enhanced response formatter optimized for Mistral's native image extraction
+                formatter = OCRResponseFormatter()
+                
+                # Format response using Mistral's native image extraction results
+                response_data = formatter.format_ocr_response(
+                    mistral_response=ocr_result,
+                    source_type="file_upload",
+                    source_identifier=file_info['filename'],
+                    processing_start_time=start_time,
+                    include_images=extract_images,
+                    include_metadata=include_metadata
+                )
+                
+                # Add processing information about native extraction
+                if 'processing_info' in response_data:
+                    response_data['processing_info']['image_extraction_method'] = 'mistral_native'
+                    response_data['processing_info']['custom_extraction_used'] = False
             
             # Record success metrics
             processing_time = (time.time() - start_time) * 1000
             record_success_metric(operation, processing_time, file_info['size_mb'])
+            
+            # Log success with appropriate format-specific details
+            if return_raw_mistral_format:
+                total_pages = len(response_data.get('pages', []))
+                total_images = sum(len(page.get('images', [])) for page in response_data.get('pages', []))
+                total_text = sum(len(page.get('markdown', '')) for page in response_data.get('pages', []))
+                app_logger.info(f"OCR processing completed using official Mistral format: "
+                              f"{total_pages} pages, {total_text} chars, {total_images} images")
+            else:
+                app_logger.info(f"OCR processing completed using Mistral native extraction: "
+                              f"{len(response_data.get('extracted_text', ''))} chars, "
+                              f"{len(response_data.get('images', []))} images")
             
             return JSONResponse(status_code=200, content=response_data)
             
@@ -540,6 +571,7 @@ async def process_file_ocr(
         raise
     except Exception as e:
         # Handle unexpected errors
+        app_logger.error(f"Unexpected error in OCR processing: {str(e)}", exc_info=True)
         unknown_error = ocr_error_handler.handle_unknown_error(e, operation)
         unknown_error.context = error_context
         
@@ -608,20 +640,20 @@ async def process_url_ocr(
         # Get authentication info
         auth_info = get_auth_info(api_key)
         
-        logger.info(f"Processing {file_type.upper()} file from URL for OCR: {request.url} -> {filename} ({len(content) / (1024*1024):.2f} MB) - Auth: {auth_info['key_hash']}")
+        app_logger.info(f"Processing {file_type.upper()} file from URL for OCR: {request.url} -> {filename} ({len(content) / (1024*1024):.2f} MB) - Auth: {auth_info['key_hash']}")
         
         # Initialize Mistral OCR service
         mistral_service = MistralOCRService()
         
-        # Prepare processing options
+        # Prepare processing options for Mistral's native image extraction
         processing_options = {
             'include_image_base64': extract_images,
-            'image_limit': 10 if extract_images else 0,
+            'image_limit': 50 if extract_images else 0,  # Increased limit for native extraction
             'image_min_size': 50,
             'pages': None  # Process all pages
         }
         
-        # Process with Mistral OCR using URL directly
+        # Process with Mistral OCR using URL directly with native image extraction
         try:
             ocr_result = await mistral_service.process_url_ocr(
                 document_url=str(request.url),
@@ -629,24 +661,55 @@ async def process_url_ocr(
                 options=processing_options
             )
             
-            # Initialize response formatter with PDF content for image extraction
-            formatter = OCRResponseFormatter()
-            formatter._pdf_content = file_content  # Store for potential image extraction
+            # Option to return raw Mistral format or formatted response
+            return_raw_mistral_format = True  # Set to True to get official Mistral format
             
-            # Format response using enhanced formatter
-            response_data = formatter.format_ocr_response(
-                mistral_response=ocr_result,
-                source_type="url",
-                source_identifier=str(request.url),
-                processing_start_time=start_time,
-                include_images=extract_images,
-                include_metadata=include_metadata
-            )
+            if return_raw_mistral_format:
+                # Return the response in official Mistral API format
+                response_data = ocr_result
+                
+                # Add minimal processing info for debugging
+                response_data['n8n_processing_info'] = {
+                    'source_type': 'url',
+                    'source_identifier': str(request.url),
+                    'processing_time_ms': (time.time() - start_time) * 1000,
+                    'api_format': 'mistral_official'
+                }
+            else:
+                # Use enhanced response formatter optimized for Mistral's native image extraction
+                formatter = OCRResponseFormatter()
+                
+                # Format response using Mistral's native image extraction results
+                response_data = formatter.format_ocr_response(
+                    mistral_response=ocr_result,
+                    source_type="url",
+                    source_identifier=str(request.url),
+                    processing_start_time=start_time,
+                    include_images=extract_images,
+                    include_metadata=include_metadata
+                )
+                
+                # Add processing information about native extraction
+                if 'processing_info' in response_data:
+                    response_data['processing_info']['image_extraction_method'] = 'mistral_native'
+                    response_data['processing_info']['custom_extraction_used'] = False
+            
+            # Log success with appropriate format-specific details  
+            if return_raw_mistral_format:
+                total_pages = len(response_data.get('pages', []))
+                total_images = sum(len(page.get('images', [])) for page in response_data.get('pages', []))
+                total_text = sum(len(page.get('markdown', '')) for page in response_data.get('pages', []))
+                app_logger.info(f"URL OCR processing completed using official Mistral format: "
+                              f"{total_pages} pages, {total_text} chars, {total_images} images")
+            else:
+                app_logger.info(f"URL OCR processing completed using Mistral native extraction: "
+                              f"{len(response_data.get('extracted_text', ''))} chars, "
+                              f"{len(response_data.get('images', []))} images")
             
             return JSONResponse(status_code=200, content=response_data)
             
         except MistralAIAuthenticationError as e:
-            logger.error(f"Mistral API authentication failed: {str(e)}")
+            app_logger.error(f"Mistral API authentication failed: {str(e)}")
             raise HTTPException(
                 status_code=401,
                 detail={
@@ -657,7 +720,7 @@ async def process_url_ocr(
                 }
             )
         except MistralAIRateLimitError as e:
-            logger.error(f"Mistral API rate limit exceeded: {str(e)}")
+            app_logger.error(f"Mistral API rate limit exceeded: {str(e)}")
             raise HTTPException(
                 status_code=429,
                 detail={
@@ -668,7 +731,7 @@ async def process_url_ocr(
                 }
             )
         except MistralAIError as e:
-            logger.error(f"Mistral API error: {str(e)}")
+            app_logger.error(f"Mistral API error: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail={
@@ -682,7 +745,7 @@ async def process_url_ocr(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in URL OCR processing: {str(e)}", exc_info=True)
+        app_logger.error(f"Unexpected error in URL OCR processing: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={
