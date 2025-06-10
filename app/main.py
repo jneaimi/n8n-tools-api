@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
 import uvicorn
 
-from app.api.routes import pdf, ocr
+from app.api.routes import pdf, ocr, rag
 from app.core.config import settings
 from app.core.errors import setup_exception_handlers
 from app.core.logging import RequestLoggingMiddleware, setup_logging, app_logger
@@ -19,6 +19,11 @@ from app.core.openapi_enhancements import (
     get_enhanced_openapi_examples, 
     get_enhanced_openapi_schemas,
     get_enhanced_security_schemes
+)
+from app.core.rag_openapi_enhancements import (
+    get_rag_openapi_examples,
+    get_rag_openapi_schemas,
+    get_rag_n8n_integration_examples
 )
 # AI PDF operations disabled - removed ai_pdf_ops import
 
@@ -28,17 +33,20 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="N8N Tools API",
         description="""
-## PDF Manipulation & AI-Powered OCR Service for n8n Workflow Automation
+## PDF Manipulation, AI-Powered OCR & RAG Operations Service for n8n Workflow Automation
 
 A FastAPI-based microservice specifically designed for **n8n workflow automation**. 
-This service provides comprehensive PDF manipulation capabilities and AI-powered OCR 
-processing using Mistral AI.
+This service provides comprehensive PDF manipulation capabilities, AI-powered OCR 
+processing using Mistral AI, and RAG (Retrieval-Augmented Generation) operations 
+with Qdrant vector database integration.
 
 ### 🚀 Key Features
 - **Split PDFs** by page ranges, individual pages, or batches
 - **Merge multiple PDFs** with various strategies and page selection
 - **Extract metadata** from PDF documents
 - **AI-Powered OCR** using Mistral AI for text and image extraction
+- **RAG Operations** with Qdrant collection management for vector embeddings
+- **Vector Database Integration** optimized for Mistral embeddings (1024 dimensions)
 - **URL Processing** for remote document OCR
 - **n8n Compatible** with auto-generated OpenAPI schema
 - **File validation** with comprehensive error handling
@@ -47,8 +55,9 @@ processing using Mistral AI.
 ### 📋 File Requirements
 - **PDF Operations**: PDF files only, 50MB max per file
 - **OCR Operations**: PDF, PNG, JPG, JPEG, TIFF files, 50MB max
+- **RAG Operations**: API key authentication required
 - **Merge Limit**: Maximum 20 files for merge operations
-- **Authentication**: API key required for OCR operations
+- **Authentication**: API key required for OCR and RAG operations
 
 ### 🔧 n8n Integration
 This API is optimized for n8n HTTP nodes with:
@@ -56,6 +65,7 @@ This API is optimized for n8n HTTP nodes with:
 - Proper HTTP status codes and error responses
 - Streaming file downloads with informative headers
 - JSON responses for validation and information endpoints
+- RAG workflow examples for vector database operations
 
 ### 📚 Available Operations
 - **Validation**: Validate PDF files before processing
@@ -65,6 +75,9 @@ This API is optimized for n8n HTTP nodes with:
 - **Metadata**: Comprehensive PDF metadata extraction
 - **OCR Processing**: AI-powered text and image extraction
 - **URL OCR**: Process remote documents via URL
+- **RAG Collection Management**: Create and manage Qdrant collections
+- **Vector Database Operations**: Optimized for Mistral embeddings
+- **Connection Testing**: Validate Qdrant and Mistral connectivity
 
 Use the interactive documentation below to explore all available endpoints.
         """.strip(),
@@ -120,10 +133,15 @@ Use the interactive documentation below to explore all available endpoints.
             routes=app.routes,
         )
         
-        # Add enhanced OCR documentation
+        # Add enhanced OCR and RAG documentation
         enhanced_examples = get_enhanced_openapi_examples()
         enhanced_schemas = get_enhanced_openapi_schemas()
         security_schemes = get_enhanced_security_schemes()
+        
+        # Add RAG-specific enhancements
+        rag_examples = get_rag_openapi_examples()
+        rag_schemas = get_rag_openapi_schemas()
+        rag_n8n_examples = get_rag_n8n_integration_examples()
         
         # Add enhanced schemas to components
         if "components" not in openapi_schema:
@@ -133,8 +151,9 @@ Use the interactive documentation below to explore all available endpoints.
         if "securitySchemes" not in openapi_schema["components"]:
             openapi_schema["components"]["securitySchemes"] = {}
             
-        # Merge enhanced schemas
+        # Merge enhanced schemas (OCR + RAG)
         openapi_schema["components"]["schemas"].update(enhanced_schemas)
+        openapi_schema["components"]["schemas"].update(rag_schemas)
         openapi_schema["components"]["securitySchemes"].update(security_schemes)
         
         # Add n8n-specific customizations
@@ -143,14 +162,18 @@ Use the interactive documentation below to explore all available endpoints.
             "altText": "n8n Compatible API"
         }
         
-        # Add OCR-specific server information
+        # Add API feature information (OCR + RAG)
         openapi_schema["info"]["x-api-features"] = {
             "ocr_processing": "AI-powered OCR using Mistral AI",
+            "rag_operations": "Qdrant collection management for RAG workflows",
             "file_processing": "Support for PDF and image files up to 50MB",
             "url_processing": "Remote document processing via URLs",
+            "vector_databases": "Qdrant integration with optimized configurations",
+            "embedding_models": "Mistral AI embedding support with 1024 dimensions",
             "n8n_optimized": "Designed for n8n workflow automation",
-            "error_handling": "Comprehensive error system with 27 error codes",
-            "rate_limiting": "60 requests/minute, 1000 requests/hour"
+            "error_handling": "Comprehensive error system with detailed error codes",
+            "rate_limiting": "60 requests/minute, 1000 requests/hour",
+            "authentication": "API key-based authentication with secure validation"
         }
         
         # Enhance OCR endpoint documentation
@@ -228,6 +251,73 @@ Use the interactive documentation below to explore all available endpoints.
                                 response_content["application/json"]["examples"] = enhanced_examples["health_response_examples"]
                 
                 # Add n8n-specific examples for PDF endpoints (existing functionality)
+                
+                # Enhance RAG endpoints with comprehensive examples
+                if "/rag-operations/" in path:
+                    # Add authentication for RAG endpoints (except status endpoints)
+                    if path not in ["/api/v1/rag-operations/", "/api/v1/rag-operations/health"]:
+                        endpoint_info["security"] = [
+                            {"ApiKeyAuth": []},
+                            {"BearerAuth": []}
+                        ]
+                    
+                    # Add comprehensive examples for RAG endpoints
+                    if "create-collection" in path and method.lower() == "post":
+                        if "requestBody" in endpoint_info:
+                            request_content = endpoint_info["requestBody"]["content"]
+                            if "application/json" in request_content:
+                                json_content = request_content["application/json"]
+                                json_content["examples"] = rag_examples["rag_collection_creation_examples"]
+                        
+                        # Add RAG-specific response examples
+                        if "responses" in endpoint_info:
+                            if "201" in endpoint_info["responses"]:
+                                response_201 = endpoint_info["responses"]["201"]
+                                response_content = response_201.get("content", {})
+                                if "application/json" in response_content:
+                                    response_content["application/json"]["examples"] = {
+                                        "successful_creation": rag_examples["rag_response_examples"]["successful_collection_creation"]
+                                    }
+                    
+                    elif "test-connection" in path and method.lower() == "post":
+                        if "requestBody" in endpoint_info:
+                            request_content = endpoint_info["requestBody"]["content"]
+                            if "application/json" in request_content:
+                                json_content = request_content["application/json"]
+                                json_content["examples"] = rag_examples["rag_connection_testing_examples"]
+                        
+                        # Add connection test response examples
+                        if "responses" in endpoint_info and "200" in endpoint_info["responses"]:
+                            response_200 = endpoint_info["responses"]["200"]
+                            response_content = response_200.get("content", {})
+                            if "application/json" in response_content:
+                                response_content["application/json"]["examples"] = {
+                                    "successful_connection": rag_examples["rag_response_examples"]["successful_connection_test"]
+                                }
+                    
+                    elif path.endswith("/health") and method.lower() == "get":
+                        if "responses" in endpoint_info and "200" in endpoint_info["responses"]:
+                            response_200 = endpoint_info["responses"]["200"]
+                            response_content = response_200.get("content", {})
+                            if "application/json" in response_content:
+                                response_content["application/json"]["examples"] = {
+                                    "healthy_service": {
+                                        "summary": "Healthy RAG service",
+                                        "value": rag_schemas["RAGHealthStatus"]["example"]
+                                    }
+                                }
+                    
+                    elif path.endswith("/") and method.lower() == "get":
+                        if "responses" in endpoint_info and "200" in endpoint_info["responses"]:
+                            response_200 = endpoint_info["responses"]["200"]
+                            response_content = response_200.get("content", {})
+                            if "application/json" in response_content:
+                                response_content["application/json"]["examples"] = {
+                                    "service_status": {
+                                        "summary": "RAG service status",
+                                        "value": rag_schemas["RAGServiceStatus"]["example"]
+                                    }
+                                }
                 elif "pdf/" in path and method.lower() == "post":
                     if (method.lower() == "post" and 
                         "requestBody" in endpoint_info and
@@ -349,6 +439,14 @@ Use the interactive documentation below to explore all available endpoints.
                 }
             },
             {
+                "name": "RAG Operations",
+                "description": "RAG (Retrieval-Augmented Generation) operations including Qdrant collection management and Mistral embeddings for n8n workflows",
+                "externalDocs": {
+                    "description": "RAG operations guide",
+                    "url": "/docs/rag-operations"
+                }
+            },
+            {
                 "name": "Root",
                 "description": "API information and navigation endpoints"
             }
@@ -395,6 +493,7 @@ Use the interactive documentation below to explore all available endpoints.
     # Include routers
     app.include_router(pdf.router, prefix="/api/v1/pdf", tags=["PDF Operations"])
     app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["OCR Operations"])
+    app.include_router(rag.router, prefix="/api/v1/rag-operations")
     
     # Dedicated OpenAPI schema endpoint for n8n integration
     @app.get("/openapi.json", include_in_schema=False, tags=["API Schema"])
@@ -450,6 +549,24 @@ Use the interactive documentation below to explore all available endpoints.
                         "method": "POST",
                         "description": "Extract PDF metadata",
                         "use_case": "Get document information for workflow decisions"
+                    },
+                    "ocr_process_file": {
+                        "url": "/api/v1/ocr/process-file",
+                        "method": "POST",
+                        "description": "AI-powered OCR processing",
+                        "use_case": "Extract text from images and PDFs using Mistral AI"
+                    },
+                    "rag_test_connection": {
+                        "url": "/api/v1/rag-operations/test-connection",
+                        "method": "POST",
+                        "description": "Test Qdrant and Mistral connectivity",
+                        "use_case": "Validate credentials before RAG operations"
+                    },
+                    "rag_create_collection": {
+                        "url": "/api/v1/rag-operations/create-collection",
+                        "method": "POST",
+                        "description": "Create Qdrant collection for embeddings",
+                        "use_case": "Set up vector database for RAG workflows"
                     }
                 },
                 "n8n_setup_tips": [
@@ -497,7 +614,10 @@ Use the interactive documentation below to explore all available endpoints.
                     "batch_processing": True,
                     "metadata_extraction": True,
                     "ai_ocr": True,
-                    "url_processing": True
+                    "url_processing": True,
+                    "rag_operations": True,
+                    "qdrant_integration": True,
+                    "mistral_embeddings": True
                 },
                 "limits": {
                     "max_file_size_mb": 50,
@@ -510,7 +630,8 @@ Use the interactive documentation below to explore all available endpoints.
                     "documentation": "/docs",
                     "openapi": "/openapi.json",
                     "n8n_info": "/n8n",
-                    "ocr_service": "/api/v1/ocr/"
+                    "ocr_service": "/api/v1/ocr/",
+                    "rag_operations": "/api/v1/rag-operations/"
                 }
             }
         )
@@ -541,6 +662,7 @@ Use the interactive documentation below to explore all available endpoints.
                     "health": "/health",
                     "pdf_operations": "/api/v1/pdf/",
                     "ocr_operations": "/api/v1/ocr/",
+                    "rag_operations": "/api/v1/rag-operations/",
                     "validation": "/api/v1/pdf/validate",
                     "metadata": "/api/v1/pdf/metadata"
                 },

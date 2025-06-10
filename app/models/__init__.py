@@ -10,10 +10,30 @@ from .pdf_models import (
     ErrorResponse
 )
 
+from .rag_models import (
+    CreateCollectionRequest,
+    CollectionResponse,
+    CollectionDetails,
+    CollectionInfoResponse,
+    VectorDistance,
+    EmbeddingRequest,
+    EmbeddingResponse
+)
+
 __all__ = [
+    # PDF models
     "PageRangeRequest",
     "SplitOptions", 
     "PDFSplitResponse",
     "PDFMetadataResponse",
-    "ErrorResponse"
+    "ErrorResponse",
+    
+    # RAG models
+    "CreateCollectionRequest",
+    "CollectionResponse", 
+    "CollectionDetails",
+    "CollectionInfoResponse",
+    "VectorDistance",
+    "EmbeddingRequest",
+    "EmbeddingResponse"
 ]

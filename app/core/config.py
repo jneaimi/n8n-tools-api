@@ -33,6 +33,20 @@ class Settings(BaseSettings):
     LOG_JSON_FORMAT: bool = True
     LOG_CORRELATION_ID: bool = True
     
+    # AI/ML API Keys
+    AI_PDF_MISTRAL_API_KEY: str = ""
+    
+    # MinIO/S3 Configuration
+    MINIO_ENDPOINT: str = ""
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_BUCKET_NAME: str = ""
+    MINIO_REGION: str = ""
+    
+    # Qdrant Configuration
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
+    
     @field_validator('CORS_ORIGINS')
     @classmethod
     def parse_cors_origins(cls, v):
@@ -46,9 +60,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
-
-# Global settings instance
-settings = Settings()
 
 # Global settings instance
 settings = Settings()

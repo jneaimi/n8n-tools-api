@@ -28,6 +28,10 @@ isort==5.12.0
 # AI PDF Operations dependencies
 aiohttp==3.8.6
 
+# RAG Operations dependencies
+# Note: Using custom HTTP client implementation instead of qdrant-client
+# due to connectivity issues with the official library
+
 # Docker testing (optional)
 docker==6.1.3
 
