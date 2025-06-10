@@ -11,10 +11,15 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
 import uvicorn
 
-from app.api.routes import pdf
+from app.api.routes import pdf, ocr
 from app.core.config import settings
 from app.core.errors import setup_exception_handlers
 from app.core.logging import RequestLoggingMiddleware, setup_logging, app_logger
+from app.core.openapi_enhancements import (
+    get_enhanced_openapi_examples, 
+    get_enhanced_openapi_schemas,
+    get_enhanced_security_schemes
+)
 # AI PDF operations disabled - removed ai_pdf_ops import
 
 def create_app() -> FastAPI:
@@ -23,24 +28,27 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="N8N Tools API",
         description="""
-## PDF Manipulation Service for n8n Workflow Automation
+## PDF Manipulation & AI-Powered OCR Service for n8n Workflow Automation
 
 A FastAPI-based microservice specifically designed for **n8n workflow automation**. 
-This service provides comprehensive PDF manipulation capabilities including splitting, 
-merging, and metadata extraction operations.
+This service provides comprehensive PDF manipulation capabilities and AI-powered OCR 
+processing using Mistral AI.
 
 ### 🚀 Key Features
 - **Split PDFs** by page ranges, individual pages, or batches
 - **Merge multiple PDFs** with various strategies and page selection
 - **Extract metadata** from PDF documents
+- **AI-Powered OCR** using Mistral AI for text and image extraction
+- **URL Processing** for remote document OCR
 - **n8n Compatible** with auto-generated OpenAPI schema
 - **File validation** with comprehensive error handling
 - **Streaming responses** for large file operations
 
 ### 📋 File Requirements
-- **Format**: PDF files only
-- **Size Limit**: 50MB per file
+- **PDF Operations**: PDF files only, 50MB max per file
+- **OCR Operations**: PDF, PNG, JPG, JPEG, TIFF files, 50MB max
 - **Merge Limit**: Maximum 20 files for merge operations
+- **Authentication**: API key required for OCR operations
 
 ### 🔧 n8n Integration
 This API is optimized for n8n HTTP nodes with:
@@ -55,6 +63,8 @@ This API is optimized for n8n HTTP nodes with:
 - **Splitting**: Multiple splitting modes (ranges, pages, batches)
 - **Merging**: Various merge strategies with page selection
 - **Metadata**: Comprehensive PDF metadata extraction
+- **OCR Processing**: AI-powered text and image extraction
+- **URL OCR**: Process remote documents via URL
 
 Use the interactive documentation below to explore all available endpoints.
         """.strip(),
@@ -110,67 +120,164 @@ Use the interactive documentation below to explore all available endpoints.
             routes=app.routes,
         )
         
+        # Add enhanced OCR documentation
+        enhanced_examples = get_enhanced_openapi_examples()
+        enhanced_schemas = get_enhanced_openapi_schemas()
+        security_schemes = get_enhanced_security_schemes()
+        
+        # Add enhanced schemas to components
+        if "components" not in openapi_schema:
+            openapi_schema["components"] = {}
+        if "schemas" not in openapi_schema["components"]:
+            openapi_schema["components"]["schemas"] = {}
+        if "securitySchemes" not in openapi_schema["components"]:
+            openapi_schema["components"]["securitySchemes"] = {}
+            
+        # Merge enhanced schemas
+        openapi_schema["components"]["schemas"].update(enhanced_schemas)
+        openapi_schema["components"]["securitySchemes"].update(security_schemes)
+        
         # Add n8n-specific customizations
         openapi_schema["info"]["x-logo"] = {
             "url": "https://docs.n8n.io/assets/n8n-logo.png",
             "altText": "n8n Compatible API"
         }
         
-        # Enhance endpoint descriptions with n8n examples
+        # Add OCR-specific server information
+        openapi_schema["info"]["x-api-features"] = {
+            "ocr_processing": "AI-powered OCR using Mistral AI",
+            "file_processing": "Support for PDF and image files up to 50MB",
+            "url_processing": "Remote document processing via URLs",
+            "n8n_optimized": "Designed for n8n workflow automation",
+            "error_handling": "Comprehensive error system with 27 error codes",
+            "rate_limiting": "60 requests/minute, 1000 requests/hour"
+        }
+        
+        # Enhance OCR endpoint documentation
         for path in openapi_schema.get("paths", {}):
             for method in openapi_schema["paths"][path]:
                 endpoint_info = openapi_schema["paths"][path][method]
                 
-                # Add n8n-specific examples for multipart form endpoints
-                if (method.lower() == "post" and 
-                    "requestBody" in endpoint_info and
-                    "multipart/form-data" in endpoint_info.get("requestBody", {}).get("content", {})):
+                # Enhance OCR endpoints with comprehensive examples
+                if "/ocr/" in path:
+                    # Add security requirements for OCR endpoints (except status endpoints)
+                    if path not in ["/api/v1/ocr/", "/api/v1/ocr/health"]:
+                        endpoint_info["security"] = [
+                            {"ApiKeyAuth": []},
+                            {"BearerAuth": []}
+                        ]
                     
-                    # Add comprehensive examples for n8n HTTP nodes
-                    form_content = endpoint_info["requestBody"]["content"]["multipart/form-data"]
+                    # Add comprehensive examples for OCR endpoints
+                    if "process-file" in path and method.lower() == "post":
+                        if "requestBody" in endpoint_info:
+                            form_content = endpoint_info["requestBody"]["content"]["multipart/form-data"]
+                            form_content["examples"] = enhanced_examples["ocr_file_processing_examples"]
+                        
+                        # Enhance responses with detailed examples
+                        if "responses" in endpoint_info:
+                            if "200" in endpoint_info["responses"]:
+                                response_200 = endpoint_info["responses"]["200"]
+                                response_content = response_200.get("content", {})
+                                if "application/json" in response_content:
+                                    response_content["application/json"]["examples"] = {
+                                        "successful_processing": enhanced_examples["response_examples"]["successful_pdf_processing"]
+                                    }
+                            
+                            # Add error response examples
+                            for error_code in ["400", "401", "413", "422", "429", "500"]:
+                                if error_code in endpoint_info["responses"]:
+                                    error_response = endpoint_info["responses"][error_code]
+                                    error_content = error_response.get("content", {})
+                                    if "application/json" in error_content:
+                                        error_examples = {}
+                                        if error_code == "401":
+                                            error_examples["authentication_error"] = enhanced_examples["error_examples"]["authentication_error"]
+                                        elif error_code == "413":
+                                            error_examples["file_too_large"] = enhanced_examples["error_examples"]["file_too_large_error"]
+                                        elif error_code == "422":
+                                            error_examples["invalid_format"] = enhanced_examples["error_examples"]["invalid_file_format_error"]
+                                        elif error_code == "429":
+                                            error_examples["rate_limit"] = enhanced_examples["error_examples"]["rate_limit_error"]
+                                        elif error_code == "500":
+                                            error_examples["processing_timeout"] = enhanced_examples["error_examples"]["processing_timeout_error"]
+                                        
+                                        if error_examples:
+                                            error_content["application/json"]["examples"] = error_examples
                     
-                    if "pdf/split" in path:
-                        form_content["examples"] = {
-                            "split_by_ranges": {
-                                "summary": "Split PDF by page ranges",
-                                "description": "Example for n8n: Split a PDF into specific page ranges",
-                                "value": {
-                                    "file": "(Upload your PDF file here)",
-                                    "ranges": "1-3,5,7-9"
+                    elif "process-url" in path and method.lower() == "post":
+                        if "requestBody" in endpoint_info:
+                            request_content = endpoint_info["requestBody"]["content"]
+                            if "application/json" in request_content:
+                                json_content = request_content["application/json"]
+                                json_content["examples"] = enhanced_examples["ocr_url_processing_examples"]
+                        
+                        # Add URL-specific response examples
+                        if "responses" in endpoint_info and "200" in endpoint_info["responses"]:
+                            response_200 = endpoint_info["responses"]["200"]
+                            response_content = response_200.get("content", {})
+                            if "application/json" in response_content:
+                                response_content["application/json"]["examples"] = {
+                                    "url_processing": enhanced_examples["response_examples"]["url_processing_response"]
                                 }
-                            },
-                            "split_into_batches": {
-                                "summary": "Split PDF into batches",
-                                "description": "Example for n8n: Split a PDF into batches of equal page count",
-                                "value": {
-                                    "file": "(Upload your PDF file here)",
-                                    "batch_size": 4,
-                                    "output_prefix": "batch_doc"
+                    
+                    elif "health" in path and method.lower() == "get":
+                        if "responses" in endpoint_info and "200" in endpoint_info["responses"]:
+                            response_200 = endpoint_info["responses"]["200"]
+                            response_content = response_200.get("content", {})
+                            if "application/json" in response_content:
+                                response_content["application/json"]["examples"] = enhanced_examples["health_response_examples"]
+                
+                # Add n8n-specific examples for PDF endpoints (existing functionality)
+                elif "pdf/" in path and method.lower() == "post":
+                    if (method.lower() == "post" and 
+                        "requestBody" in endpoint_info and
+                        "multipart/form-data" in endpoint_info.get("requestBody", {}).get("content", {})):
+                        
+                        # Add comprehensive examples for n8n HTTP nodes
+                        form_content = endpoint_info["requestBody"]["content"]["multipart/form-data"]
+                        
+                        if "pdf/split" in path:
+                            form_content["examples"] = {
+                                "split_by_ranges": {
+                                    "summary": "Split PDF by page ranges",
+                                    "description": "Example for n8n: Split a PDF into specific page ranges",
+                                    "value": {
+                                        "file": "(Upload your PDF file here)",
+                                        "ranges": "1-3,5,7-9"
+                                    }
+                                },
+                                "split_into_batches": {
+                                    "summary": "Split PDF into batches",
+                                    "description": "Example for n8n: Split a PDF into batches of equal page count",
+                                    "value": {
+                                        "file": "(Upload your PDF file here)",
+                                        "batch_size": 4,
+                                        "output_prefix": "batch_doc"
+                                    }
                                 }
                             }
-                        }
-                    
-                    elif "pdf/merge" in path:
-                        form_content["examples"] = {
-                            "simple_merge": {
-                                "summary": "Simple PDF merge",
-                                "description": "Example for n8n: Merge multiple PDFs in order",
-                                "value": {
-                                    "files": ["(Upload PDF files here)"],
-                                    "merge_strategy": "append",
-                                    "preserve_metadata": True,
-                                    "output_filename": "merged_document.pdf"
-                                }
-                            },
-                            "merge_with_ranges": {
-                                "summary": "Merge with page ranges",
-                                "description": "Example for n8n: Merge specific page ranges from multiple PDFs",
-                                "value": {
-                                    "files": ["(Upload PDF files here)"],
-                                    "range_selections": "[['1-3', '5'], ['2-4'], ['1', '6-8']]"
+                        
+                        elif "pdf/merge" in path:
+                            form_content["examples"] = {
+                                "simple_merge": {
+                                    "summary": "Simple PDF merge",
+                                    "description": "Example for n8n: Merge multiple PDFs in order",
+                                    "value": {
+                                        "files": ["(Upload PDF files here)"],
+                                        "merge_strategy": "append",
+                                        "preserve_metadata": True,
+                                        "output_filename": "merged_document.pdf"
+                                    }
+                                },
+                                "merge_with_ranges": {
+                                    "summary": "Merge with page ranges",
+                                    "description": "Example for n8n: Merge specific page ranges from multiple PDFs",
+                                    "value": {
+                                        "files": ["(Upload PDF files here)"],
+                                        "range_selections": "[['1-3', '5'], ['2-4'], ['1', '6-8']]"
+                                    }
                                 }
                             }
-                        }
         
         # Add custom response headers documentation
         for path in openapi_schema.get("paths", {}):
@@ -215,21 +322,47 @@ Use the interactive documentation below to explore all available endpoints.
                                 }
                             }
         
-        # Add global tags for better organization in n8n
+        # Add comprehensive tags for better organization in n8n
         openapi_schema["tags"] = [
             {
                 "name": "Health",
-                "description": "Health check and service status endpoints"
+                "description": "Health check and service status endpoints",
+                "externalDocs": {
+                    "description": "Health monitoring guide",
+                    "url": "/docs/health-monitoring"
+                }
             },
             {
                 "name": "PDF Operations", 
-                "description": "Core PDF manipulation operations for n8n workflows"
+                "description": "Core PDF manipulation operations for n8n workflows",
+                "externalDocs": {
+                    "description": "PDF processing guide",
+                    "url": "/docs/pdf-operations"
+                }
+            },
+            {
+                "name": "OCR Operations",
+                "description": "AI-powered OCR processing using Mistral AI with comprehensive error handling and n8n optimization",
+                "externalDocs": {
+                    "description": "OCR API specification",
+                    "url": "/docs/api/ocr-api-specification.md"
+                }
             },
             {
                 "name": "Root",
                 "description": "API information and navigation endpoints"
             }
         ]
+        
+        # Add n8n-specific extensions
+        openapi_schema["x-n8n-integration"] = {
+            "version": "1.0.0",
+            "compatibility": "n8n v1.0+",
+            "recommended_nodes": ["HTTP Request", "Code", "If", "Set"],
+            "workflow_examples": "/n8n",
+            "authentication_guide": "/docs/api/ocr-api-specification.md#authentication",
+            "error_handling_guide": "/docs/api/ocr-api-specification.md#error-handling"
+        }
         
         app.openapi_schema = openapi_schema
         return app.openapi_schema
@@ -261,6 +394,7 @@ Use the interactive documentation below to explore all available endpoints.
     
     # Include routers
     app.include_router(pdf.router, prefix="/api/v1/pdf", tags=["PDF Operations"])
+    app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["OCR Operations"])
     
     # Dedicated OpenAPI schema endpoint for n8n integration
     @app.get("/openapi.json", include_in_schema=False, tags=["API Schema"])
@@ -361,17 +495,22 @@ Use the interactive documentation below to explore all available endpoints.
                     "pdf_operations": True,
                     "file_validation": True,
                     "batch_processing": True,
-                    "metadata_extraction": True
+                    "metadata_extraction": True,
+                    "ai_ocr": True,
+                    "url_processing": True
                 },
                 "limits": {
                     "max_file_size_mb": 50,
                     "max_merge_files": 20,
-                    "supported_formats": ["pdf"]
+                    "supported_formats": ["pdf"],
+                    "ocr_formats": ["pdf", "png", "jpg", "jpeg", "tiff"],
+                    "ocr_auth_required": True
                 },
                 "endpoints": {
                     "documentation": "/docs",
                     "openapi": "/openapi.json",
-                    "n8n_info": "/n8n"
+                    "n8n_info": "/n8n",
+                    "ocr_service": "/api/v1/ocr/"
                 }
             }
         )
@@ -401,6 +540,7 @@ Use the interactive documentation below to explore all available endpoints.
                 "endpoints": {
                     "health": "/health",
                     "pdf_operations": "/api/v1/pdf/",
+                    "ocr_operations": "/api/v1/ocr/",
                     "validation": "/api/v1/pdf/validate",
                     "metadata": "/api/v1/pdf/metadata"
                 },
@@ -408,7 +548,8 @@ Use the interactive documentation below to explore all available endpoints.
                     "1": "Check service health at /health",
                     "2": "Validate PDF files at /api/v1/pdf/validate", 
                     "3": "Process PDFs using /api/v1/pdf/* endpoints",
-                    "4": "View full documentation at /docs"
+                    "4": "Use OCR at /api/v1/ocr/* endpoints (requires API key)",
+                    "5": "View full documentation at /docs"
                 },
                 "support": {
                     "documentation": "/docs",

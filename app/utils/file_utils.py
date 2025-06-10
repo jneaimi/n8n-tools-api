@@ -46,7 +46,7 @@ def sanitize_filename(filename: str) -> str:
     if not sanitized or sanitized == '.pdf':
         sanitized = f"upload_{uuid.uuid4().hex[:8]}.pdf"
     
-    logger.debug(f"Sanitized filename: '{filename}' -> '{sanitized}'")
+    app_logger.debug(f"Sanitized filename: '{filename}' -> '{sanitized}'")
     return sanitized
 
 async def validate_pdf_file(file: UploadFile) -> bool:
@@ -173,7 +173,7 @@ async def save_temp_file(file: UploadFile, prefix: str = "n8n_pdf_") -> str:
         return temp_path
             
     except Exception as e:
-        logger.error(f"Failed to save temporary file: {str(e)}")
+        app_logger.error(f"Failed to save temporary file: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to save uploaded file")
     finally:
         # Reset file pointer for any subsequent operations
@@ -185,13 +185,13 @@ def cleanup_temp_file(file_path: str) -> None:
         if os.path.exists(file_path):
             # Verify the file is in our temp directory for security
             if not file_path.startswith(settings.TEMP_DIR):
-                logger.warning(f"Attempted to cleanup file outside temp directory: {file_path}")
+                app_logger.warning(f"Attempted to cleanup file outside temp directory: {file_path}")
                 return
                 
             os.unlink(file_path)
-            logger.info(f"Cleaned up temporary file: {file_path}")
+            app_logger.info(f"Cleaned up temporary file: {file_path}")
     except Exception as e:
-        logger.warning(f"Failed to cleanup temp file {file_path}: {str(e)}")
+        app_logger.warning(f"Failed to cleanup temp file {file_path}: {str(e)}")
 
 def cleanup_temp_files(file_paths: List[str]) -> None:
     """Clean up multiple temporary files."""

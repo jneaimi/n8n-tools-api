@@ -4,6 +4,7 @@ uvicorn[standard]==0.24.0
 
 # PDF processing
 pypdf==3.17.4
+PyMuPDF==1.23.9  # For enhanced image extraction
 
 # File handling and validation
 python-multipart==0.0.6

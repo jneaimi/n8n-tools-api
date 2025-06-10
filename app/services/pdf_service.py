@@ -11,6 +11,7 @@ import os
 import io
 import re
 import time
+import logging
 from datetime import datetime
 
 from app.core.errors import PDFProcessingError
@@ -21,6 +22,8 @@ from app.core.logging import (
     get_correlation_id,
     app_logger
 )
+
+logger = app_logger  # Alias for backward compatibility
 
 class PDFService:
     """Service class for PDF operations."""
@@ -269,7 +272,7 @@ class PDFService:
                     "height_inches": round(float(mediabox.height) / 72, 2)
                 }
             
-            logger.info(f"Successfully extracted metadata for PDF ({result['page_count']} pages)")
+            app_logger.info(f"Successfully extracted metadata for PDF ({result['page_count']} pages)")
             return result
             
         except Exception as e:
