@@ -618,7 +618,12 @@ class OCRResponseProcessor:
             return ocr_response, {
                 'images_detected': 0,
                 'images_uploaded': 0,
-                'processing_time_ms': (time.time() - start_time) * 1000
+                'images_failed': 0,
+                'upload_success_rate': 1.0,  # 100% success when no images to process
+                'fallback_used': False,
+                'processing_time_ms': (time.time() - start_time) * 1000,
+                's3_bucket': self.s3_config.bucket_name,
+                's3_prefix': self.upload_prefix
             }
         
         app_logger.info(f"Proceeding with S3 upload for {len(detected_images)} detected images")

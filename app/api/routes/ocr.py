@@ -965,8 +965,8 @@ async def process_file_ocr_with_s3(
                         'source_identifier': file_info['filename'],
                         'processing_time_ms': (time.time() - start_time) * 1000,
                         'api_format': 'mistral_with_s3',
-                        's3_images_uploaded': upload_info['images_uploaded'],
-                        's3_upload_success_rate': upload_info['upload_success_rate']
+                        's3_images_uploaded': upload_info.get('images_uploaded', 0),
+                        's3_upload_success_rate': upload_info.get('upload_success_rate', 1.0)
                     }
                     
                     response_data = modified_response
@@ -1244,8 +1244,8 @@ async def process_url_ocr_with_s3(
                         'source_identifier': str(request.url),
                         'processing_time_ms': (time.time() - start_time) * 1000,
                         'api_format': 'mistral_with_s3',
-                        's3_images_uploaded': upload_info['images_uploaded'],
-                        's3_upload_success_rate': upload_info['upload_success_rate']
+                        's3_images_uploaded': upload_info.get('images_uploaded', 0),
+                        's3_upload_success_rate': upload_info.get('upload_success_rate', 1.0)
                     }
                     
                     response_data = modified_response
