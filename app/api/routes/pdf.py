@@ -230,7 +230,40 @@ async def split_pdf_to_pages(file: UploadFile = File(...)):
 
 # ================== PDF BATCH SPLIT ENDPOINTS ==================
 
-@router.post("/split/batch", summary="Split PDF into Batches")
+@router.post("/split/batch", 
+             summary="Split PDF into Batches", 
+             responses={
+                 200: {
+                     "description": "Successfully split PDF into batches - Returns ZIP file containing batch PDFs",
+                     "content": {
+                         "application/zip": {
+                             "example": "Binary ZIP file containing batch PDFs"
+                         }
+                     },
+                     "headers": {
+                         "Content-Disposition": {
+                             "description": "Attachment filename for download",
+                             "schema": {"type": "string"}
+                         },
+                         "X-Batch-Count": {
+                             "description": "Number of batches created", 
+                             "schema": {"type": "string"}
+                         },
+                         "X-Total-Pages": {
+                             "description": "Total pages in original PDF",
+                             "schema": {"type": "string"}
+                         }
+                     }
+                 },
+                 400: {
+                     "description": "Bad request - Invalid file or parameters",
+                     "content": {
+                         "application/json": {
+                             "example": {"detail": "Failed to split PDF into batches: Invalid batch size"}
+                         }
+                     }
+                 }
+             })
 async def split_pdf_into_batches(
     file: UploadFile = File(..., description="PDF file to split"),
     batch_size: int = Form(..., description="Number of pages per batch", gt=0, le=1000),
@@ -238,10 +271,18 @@ async def split_pdf_into_batches(
 ):
     """Split PDF into batches of specified page count.
     
-    For example, if batch_size=4 and PDF has 10 pages, creates 3 files:
-    - Batch 1: pages 1-4
-    - Batch 2: pages 5-8  
-    - Batch 3: pages 9-10
+    **For n8n users:** This endpoint returns a ZIP file containing the batch PDFs. 
+    In your HTTP Request node, set the response format to "File" to properly 
+    handle the binary download.
+    
+    **Examples:**
+    - batch_size=4 and PDF has 10 pages → creates 3 batches:
+      - Batch 1: pages 1-4
+      - Batch 2: pages 5-8  
+      - Batch 3: pages 9-10
+    
+    **Response:** ZIP file containing individual PDF batches
+    **Headers:** Include batch count, total pages, and processing time
     """
     try:
         start_time = time.time()
@@ -282,7 +323,7 @@ async def split_pdf_into_batches(
         base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
         zip_filename = f"{base_name}_batches_size_{batch_size}.zip"
         
-        # Return ZIP file as streaming response
+        # Return ZIP file as streaming response with enhanced headers
         return StreamingResponse(
             io.BytesIO(zip_buffer.getvalue()),
             media_type="application/zip",
@@ -292,7 +333,9 @@ async def split_pdf_into_batches(
                 "X-Batch-Size": str(batch_size),
                 "X-Total-Pages": str(metadata["page_count"]),
                 "X-Processing-Time-Ms": str(round(processing_time, 2)),
-                "X-File-Size-MB": str(metadata["file_size_mb"])
+                "X-File-Size-MB": str(metadata["file_size_mb"]),
+                "Cache-Control": "no-cache",
+                "Access-Control-Expose-Headers": "Content-Disposition, X-Batch-Count, X-Batch-Size, X-Total-Pages, X-Processing-Time-Ms, X-File-Size-MB"
             }
         )
         
@@ -301,6 +344,122 @@ async def split_pdf_into_batches(
         raise HTTPException(
             status_code=400,
             detail=f"Failed to split PDF into batches: {str(e)}"
+        )
+
+@router.post("/split/batch/preview", 
+             summary="Preview Batch Split (JSON Response)",
+             response_model=None,
+             responses={
+                 200: {
+                     "description": "Batch split preview with detailed information",
+                     "content": {
+                         "application/json": {
+                             "example": {
+                                 "status": "success",
+                                 "message": "PDF would be split into 3 batches",
+                                 "batch_info": {
+                                     "total_batches": 3,
+                                     "batch_size": 10,
+                                     "total_pages": 25,
+                                     "file_size_mb": 12.34,
+                                     "processing_estimate_ms": 2500
+                                 },
+                                 "batch_details": [
+                                     {"batch_number": 1, "pages": "1-10", "page_count": 10},
+                                     {"batch_number": 2, "pages": "11-20", "page_count": 10},
+                                     {"batch_number": 3, "pages": "21-25", "page_count": 5}
+                                 ]
+                             }
+                         }
+                     }
+                 }
+             })
+async def preview_batch_split(
+    file: UploadFile = File(..., description="PDF file to analyze"),
+    batch_size: int = Form(..., description="Number of pages per batch", gt=0, le=1000),
+    output_prefix: Optional[str] = Form(None, description="Custom filename prefix")
+):
+    """Preview how a PDF would be split into batches without actually creating files.
+    
+    **For Swagger UI testing:** This endpoint returns JSON instead of binary files,
+    making it easier to test and see results in the browser.
+    
+    **Use this endpoint to:**
+    - Test your PDF before actual processing
+    - See how many batches would be created
+    - Verify page distribution across batches
+    - Get processing time estimates
+    """
+    try:
+        start_time = time.time()
+        
+        # Validate the file
+        await validate_pdf_file(file)
+        
+        # Read file content
+        pdf_content = await file.read()
+        
+        # Get source metadata
+        metadata = await PDFService.get_metadata(pdf_content)
+        
+        # Calculate batch information
+        total_pages = metadata["page_count"]
+        total_batches = (total_pages + batch_size - 1) // batch_size  # Ceiling division
+        
+        # Generate batch details
+        batch_details = []
+        for i in range(total_batches):
+            start_page = i * batch_size + 1
+            end_page = min((i + 1) * batch_size, total_pages)
+            page_count = end_page - start_page + 1
+            
+            if start_page == end_page:
+                pages_str = str(start_page)
+            else:
+                pages_str = f"{start_page}-{end_page}"
+            
+            batch_details.append({
+                "batch_number": i + 1,
+                "pages": pages_str,
+                "page_count": page_count,
+                "filename": f"batch_{i+1:02d}_pages_{pages_str}.pdf"
+            })
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        # Generate output filename for reference
+        original_filename = file.filename or "document.pdf"
+        if output_prefix:
+            original_filename = f"{output_prefix}.pdf"
+        
+        base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+        zip_filename = f"{base_name}_batches_size_{batch_size}.zip"
+        
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"PDF would be split into {total_batches} batches (batch_size={batch_size})",
+                "batch_info": {
+                    "total_batches": total_batches,
+                    "batch_size": batch_size,
+                    "total_pages": total_pages,
+                    "file_size_mb": metadata["file_size_mb"],
+                    "processing_time_ms": round(processing_time, 2),
+                    "output_zip_filename": zip_filename
+                },
+                "batch_details": batch_details,
+                "next_steps": {
+                    "to_download": "Use POST /api/v1/pdf/split/batch with same parameters",
+                    "note": "Actual processing may take longer for large files"
+                }
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to preview PDF batch split: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to preview PDF batch split: {str(e)}"
         )
 
 @router.post("/split/batch/info", summary="Get Batch Split Information")

@@ -1,0 +1,872 @@
+{
+  "info": {
+    "name": "N8N Tools API - PDF Manipulation & OCR Service",
+    "description": "FastAPI-based microservice for PDF manipulation, AI-powered OCR, and RAG operations designed for n8n workflow automation.\n\n## Key Features\n- PDF splitting, merging, and metadata extraction\n- AI-powered OCR using Mistral AI\n- RAG operations with Qdrant vector database\n- File validation and comprehensive error handling\n- Optimized for n8n HTTP nodes\n\n## Authentication\n- OCR and RAG endpoints require API key\n- PDF operations are public\n- API key can be provided via X-API-Key header or Authorization: Bearer token\n\n## Base URL\nUpdate the {{base_url}} variable with your deployment URL:\n- Development: http://localhost:8000\n- Production: https://your-production-domain.com",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health & Status",
+      "description": "Health checks and service status endpoints",
+      "item": [
+        {
+          "name": "Root API Information",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            },
+            "description": "Get API overview and navigation links"
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check service health and operational status"
+          }
+        },
+        {
+          "name": "N8N Integration Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/n8n",
+              "host": ["{{base_url}}"],
+              "path": ["n8n"]
+            },
+            "description": "Get n8n integration information and quick start guide"
+          }
+        },
+        {
+          "name": "OpenAPI Schema",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/openapi.json",
+              "host": ["{{base_url}}"],
+              "path": ["openapi.json"]
+            },
+            "description": "Get OpenAPI schema for n8n HTTP node integration"
+          }
+        }
+      ]
+    },
+    {
+      "name": "PDF Operations",
+      "description": "PDF manipulation operations including split, merge, and metadata extraction",
+      "item": [
+        {
+          "name": "PDF Service Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", ""]
+            },
+            "description": "Get PDF service status and available operations"
+          }
+        },
+        {
+          "name": "Validate PDF File",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF file to validate"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/validate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "validate"]
+            },
+            "description": "Validate uploaded PDF file without processing"
+          }
+        },
+        {
+          "name": "Get PDF File Information",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF file to analyze"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "info"]
+            },
+            "description": "Get detailed information about uploaded PDF file"
+          }
+        },
+        {
+          "name": "Extract PDF Metadata",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF file for metadata extraction"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/metadata",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "metadata"]
+            },
+            "description": "Extract comprehensive metadata from PDF file"
+          }
+        },
+        {
+          "name": "Split PDF by Page Ranges",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF file to split"
+                },
+                {
+                  "key": "ranges",
+                  "value": "1-3,5,7-9",
+                  "type": "text",
+                  "description": "Comma-separated page ranges (e.g., '1-3,5,7-9')"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/split/ranges",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "split", "ranges"]
+            },
+            "description": "Split PDF by specified page ranges. Returns ZIP file with split PDFs."
+          }
+        },
+        {
+          "name": "Split PDF into Individual Pages",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF file to split"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/split/pages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "split", "pages"]
+            },
+            "description": "Split PDF into individual pages. Returns ZIP file with all pages."
+          }
+        },
+        {
+          "name": "Split PDF into Batches",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF file to split"
+                },
+                {
+                  "key": "batch_size",
+                  "value": "4",
+                  "type": "text",
+                  "description": "Number of pages per batch"
+                },
+                {
+                  "key": "output_prefix",
+                  "value": "batch_doc",
+                  "type": "text",
+                  "description": "Custom filename prefix (optional)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/split/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "split", "batch"]
+            },
+            "description": "Split PDF into batches of specified page count. Returns ZIP file with batch PDFs."
+          }
+        },
+        {
+          "name": "Get Batch Split Information",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF file to analyze"
+                },
+                {
+                  "key": "batch_size",
+                  "value": "4",
+                  "type": "text",
+                  "description": "Number of pages per batch"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/split/batch/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "split", "batch", "info"]
+            },
+            "description": "Get information about how a PDF would be split into batches (preview)"
+          }
+        },
+        {
+          "name": "Merge Multiple PDFs",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF files to merge (minimum 2, maximum 20)"
+                },
+                {
+                  "key": "merge_strategy",
+                  "value": "append",
+                  "type": "text",
+                  "description": "Merge strategy: 'append' or 'interleave'"
+                },
+                {
+                  "key": "preserve_metadata",
+                  "value": "true",
+                  "type": "text",
+                  "description": "Preserve metadata from first PDF"
+                },
+                {
+                  "key": "output_filename",
+                  "value": "merged_document.pdf",
+                  "type": "text",
+                  "description": "Custom output filename (optional)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/merge",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "merge"]
+            },
+            "description": "Merge multiple PDF files into a single document. Returns merged PDF."
+          }
+        },
+        {
+          "name": "Get PDF Merge Information",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF files to analyze"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/merge/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "merge", "info"]
+            },
+            "description": "Get information about PDFs before merging (preview)"
+          }
+        },
+        {
+          "name": "Merge PDFs with Page Selection",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF files to merge"
+                },
+                {
+                  "key": "page_selections",
+                  "value": "[[1,2,3], [1,5,6], [2,4]]",
+                  "type": "text",
+                  "description": "JSON string of page selections per file"
+                },
+                {
+                  "key": "preserve_metadata",
+                  "value": "true",
+                  "type": "text",
+                  "description": "Preserve metadata from first PDF"
+                },
+                {
+                  "key": "output_filename",
+                  "value": "merged_pages.pdf",
+                  "type": "text",
+                  "description": "Custom output filename (optional)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/merge/pages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "merge", "pages"]
+            },
+            "description": "Merge PDFs with specific page selections. JSON format: [[1,2,3], [1,5,6], [2,4]]"
+          }
+        },
+        {
+          "name": "Merge PDFs with Range Selection",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF files to merge"
+                },
+                {
+                  "key": "range_selections",
+                  "value": "[['1-3', '5'], ['2-4'], ['1', '6-8']]",
+                  "type": "text",
+                  "description": "JSON string of range selections per file"
+                },
+                {
+                  "key": "preserve_metadata",
+                  "value": "true",
+                  "type": "text",
+                  "description": "Preserve metadata from first PDF"
+                },
+                {
+                  "key": "output_filename",
+                  "value": "merged_ranges.pdf",
+                  "type": "text",
+                  "description": "Custom output filename (optional)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pdf/merge/ranges",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pdf", "merge", "ranges"]
+            },
+            "description": "Merge PDFs with specific page range selections. JSON format: [['1-3', '5'], ['2-4'], ['1', '6-8']]"
+          }
+        }
+      ]
+    },
+    {
+      "name": "OCR Operations",
+      "description": "AI-powered OCR processing using Mistral AI with authentication required",
+      "item": [
+        {
+          "name": "OCR Service Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", ""]
+            },
+            "description": "Get OCR service status and capabilities"
+          }
+        },
+        {
+          "name": "OCR Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", "health"]
+            },
+            "description": "Check OCR service health and Mistral AI connectivity"
+          }
+        },
+        {
+          "name": "Test API Key Authentication",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Your Mistral AI API key"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/auth/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", "auth", "test"]
+            },
+            "description": "Test API key authentication without processing any files"
+          }
+        },
+        {
+          "name": "Validate File for OCR",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF or image file to validate (PDF, PNG, JPG, JPEG, TIFF)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/validate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", "validate"]
+            },
+            "description": "Validate file for OCR processing without performing actual OCR"
+          }
+        },
+        {
+          "name": "Process File with OCR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Your Mistral AI API key"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF or image file to process"
+                },
+                {
+                  "key": "extract_text",
+                  "value": "true",
+                  "type": "text",
+                  "description": "Extract text from document"
+                },
+                {
+                  "key": "extract_images",
+                  "value": "false",
+                  "type": "text",
+                  "description": "Extract images from document"
+                },
+                {
+                  "key": "language",
+                  "value": "auto",
+                  "type": "text",
+                  "description": "Language hint for OCR processing"
+                },
+                {
+                  "key": "output_format",
+                  "value": "json",
+                  "type": "text",
+                  "description": "Output format: json, text, or markdown"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/process-file",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", "process-file"]
+            },
+            "description": "Process file with AI-powered OCR using Mistral AI"
+          }
+        },
+        {
+          "name": "Process URL with OCR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Your Mistral AI API key"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com/document.pdf\",\n  \"extract_text\": true,\n  \"extract_images\": false,\n  \"language\": \"auto\",\n  \"output_format\": \"json\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/process-url",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", "process-url"]
+            },
+            "description": "Process remote document via URL with AI-powered OCR"
+          }
+        },
+        {
+          "name": "Process File and Upload to S3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Your Mistral AI API key"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "PDF or image file to process"
+                },
+                {
+                  "key": "s3_bucket",
+                  "value": "your-bucket-name",
+                  "type": "text",
+                  "description": "S3 bucket name"
+                },
+                {
+                  "key": "s3_key",
+                  "value": "processed/document.json",
+                  "type": "text",
+                  "description": "S3 object key"
+                },
+                {
+                  "key": "aws_access_key_id",
+                  "value": "{{aws_access_key}}",
+                  "type": "text",
+                  "description": "AWS access key ID"
+                },
+                {
+                  "key": "aws_secret_access_key",
+                  "value": "{{aws_secret_key}}",
+                  "type": "text",
+                  "description": "AWS secret access key"
+                },
+                {
+                  "key": "aws_region",
+                  "value": "us-east-1",
+                  "type": "text",
+                  "description": "AWS region"
+                },
+                {
+                  "key": "extract_text",
+                  "value": "true",
+                  "type": "text",
+                  "description": "Extract text from document"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/process-file-s3",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", "process-file-s3"]
+            },
+            "description": "Process file with OCR and upload results to S3"
+          }
+        },
+        {
+          "name": "Process URL and Upload to S3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "description": "Your Mistral AI API key"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com/document.pdf\",\n  \"s3_config\": {\n    \"bucket\": \"your-bucket-name\",\n    \"key\": \"processed/document.json\",\n    \"aws_access_key_id\": \"{{aws_access_key}}\",\n    \"aws_secret_access_key\": \"{{aws_secret_key}}\",\n    \"aws_region\": \"us-east-1\"\n  },\n  \"extract_text\": true,\n  \"extract_images\": false,\n  \"output_format\": \"json\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocr/process-url-s3",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocr", "process-url-s3"]
+            },
+            "description": "Process remote document via URL with OCR and upload results to S3"
+          }
+        }
+      ]
+    },
+    {
+      "name": "RAG Operations",
+      "description": "RAG (Retrieval-Augmented Generation) operations with Qdrant vector database and Mistral embeddings",
+      "item": [
+        {
+          "name": "RAG Service Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag-operations/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag-operations", ""]
+            },
+            "description": "Get RAG service status and capabilities"
+          }
+        },
+        {
+          "name": "RAG Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag-operations/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag-operations", "health"]
+            },
+            "description": "Check RAG service health and dependencies"
+          }
+        },
+        {
+          "name": "Test Connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qdrant_url\": \"http://localhost:6333\",\n  \"qdrant_api_key\": \"your-qdrant-api-key\",\n  \"mistral_api_key\": \"{{api_key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag-operations/test-connection",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag-operations", "test-connection"]
+            },
+            "description": "Test Qdrant server and Mistral AI connectivity"
+          }
+        },
+        {
+          "name": "Create Collection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"my_documents\",\n  \"qdrant_url\": \"http://localhost:6333\",\n  \"qdrant_api_key\": \"your-qdrant-api-key\",\n  \"mistral_api_key\": \"{{api_key}}\",\n  \"vector_size\": 1024,\n  \"distance_metric\": \"cosine\",\n  \"description\": \"Collection for storing document embeddings\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag-operations/create-collection",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag-operations", "create-collection"]
+            },
+            "description": "Create a new Qdrant collection optimized for Mistral embeddings"
+          }
+        },
+        {
+          "name": "List Collections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag-operations/collections",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag-operations", "collections"]
+            },
+            "description": "List all available Qdrant collections"
+          }
+        },
+        {
+          "name": "Get Collection Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/rag-operations/collections/{{collection_name}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "rag-operations", "collections", "{{collection_name}}"]
+            },
+            "description": "Get detailed information about a specific collection"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "description": "Base URL for the N8N Tools API (update for your deployment)"
+    },
+    {
+      "key": "api_key",
+      "value": "your-mistral-api-key-here",
+      "description": "Your Mistral AI API key for OCR and RAG operations"
+    },
+    {
+      "key": "aws_access_key",
+      "value": "your-aws-access-key",
+      "description": "AWS access key for S3 operations"
+    },
+    {
+      "key": "aws_secret_key",
+      "value": "your-aws-secret-key",
+      "description": "AWS secret key for S3 operations"
+    },
+    {
+      "key": "collection_name",
+      "value": "my_documents",
+      "description": "Name of the Qdrant collection for RAG operations"
+    }
+  ],
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Pre-request script for N8N Tools API",
+          "// Add any common setup here",
+          "",
+          "// Log request details for debugging",
+          "console.log('Request URL:', pm.request.url.toString());",
+          "console.log('Request Method:', pm.request.method);"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Common test script for N8N Tools API",
+          "",
+          "// Test for successful response codes",
+          "pm.test('Status code is success', function () {",
+          "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 202]);",
+          "});",
+          "",
+          "// Test response time",
+          "pm.test('Response time is less than 30s', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(30000);",
+          "});",
+          "",
+          "// Test for JSON response (when applicable)",
+          "if (pm.response.headers.get('Content-Type') && pm.response.headers.get('Content-Type').includes('application/json')) {",
+          "    pm.test('Response is valid JSON', function () {",
+          "        pm.response.to.have.jsonBody();",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Batch Split API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        textarea { width: 100%; height: 200px; font-family: monospace; }
+        input[type="file"] { margin: 10px 0; }
+        input[type="number"] { padding: 5px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>PDF Batch Split API Test</h1>
+    
+    <div class="section info">
+        <h2>🚀 Fixed Swagger UI Issue</h2>
+        <p><strong>Problem:</strong> Swagger UI was showing "Error: OK" for binary file downloads.</p>
+        <p><strong>Solution:</strong> Added enhanced response headers and a preview endpoint that returns JSON.</p>
+        <ul>
+            <li><strong>Original endpoint:</strong> <code>/api/v1/pdf/split/batch</code> - Returns ZIP file (works, but Swagger UI can't display binary)</li>
+            <li><strong>New preview endpoint:</strong> <code>/api/v1/pdf/split/batch/preview</code> - Returns JSON (perfect for Swagger UI testing)</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>📋 Test the Preview Endpoint (JSON Response)</h2>
+        <p>This endpoint shows you exactly what would happen without downloading files - perfect for Swagger UI!</p>
+        
+        <input type="file" id="pdfFile" accept=".pdf">
+        <input type="number" id="batchSize" placeholder="Batch size (e.g., 10)" value="10" min="1" max="1000">
+        <input type="text" id="outputPrefix" placeholder="Output prefix (optional)">
+        <br>
+        <button onclick="testPreview()">Test Preview (JSON)</button>
+        <button onclick="testActualSplit()">Test Actual Split (Download ZIP)</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+
+    <div class="section">
+        <h2>📊 Results</h2>
+        <div id="results"></div>
+        <textarea id="responseText" placeholder="API response will appear here..."></textarea>
+    </div>
+
+    <div class="section">
+        <h2>💡 How to Use in Swagger UI</h2>
+        <ol>
+            <li>Go to <a href="http://localhost:8000/docs" target="_blank">http://localhost:8000/docs</a></li>
+            <li>Find the <strong>"POST /api/v1/pdf/split/batch/preview"</strong> endpoint</li>
+            <li>Click "Try it out"</li>
+            <li>Upload your PDF file</li>
+            <li>Set batch_size (e.g., 10)</li>
+            <li>Click "Execute"</li>
+            <li>✅ You'll now see a proper JSON response instead of "Error: OK"!</li>
+        </ol>
+        
+        <h3>🔧 For Actual File Downloads:</h3>
+        <ol>
+            <li>Use the original <strong>"POST /api/v1/pdf/split/batch"</strong> endpoint</li>
+            <li>The API works correctly - Swagger UI just can't display binary files</li>
+            <li>Use curl, Postman, or n8n HTTP Request node for actual downloads</li>
+        </ol>
+    </div>
+
+    <div class="section">
+        <h2>🚀 n8n Integration</h2>
+        <p><strong>For n8n workflows:</strong></p>
+        <ul>
+            <li><strong>Preview/Testing:</strong> Use <code>/split/batch/preview</code> - returns JSON with batch details</li>
+            <li><strong>Actual Processing:</strong> Use <code>/split/batch</code> - returns ZIP file</li>
+            <li><strong>Set Response Format:</strong> "File" for ZIP downloads, "JSON" for preview</li>
+        </ul>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1/pdf';
+
+        function showResult(message, type = 'info') {
+            const results = document.getElementById('results');
+            results.innerHTML = `<div class="section ${type}">${message}</div>`;
+        }
+
+        function updateResponse(text) {
+            document.getElementById('responseText').value = text;
+        }
+
+        async function testPreview() {
+            const fileInput = document.getElementById('pdfFile');
+            const batchSize = document.getElementById('batchSize').value;
+            const outputPrefix = document.getElementById('outputPrefix').value;
+
+            if (!fileInput.files[0]) {
+                showResult('❌ Please select a PDF file first', 'error');
+                return;
+            }
+
+            if (!batchSize || batchSize < 1) {
+                showResult('❌ Please enter a valid batch size (1-1000)', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('batch_size', batchSize);
+            if (outputPrefix) {
+                formData.append('output_prefix', outputPrefix);
+            }
+
+            try {
+                showResult('🔄 Testing preview endpoint...', 'info');
+                
+                const response = await fetch(`${API_BASE}/split/batch/preview`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                updateResponse(JSON.stringify(data, null, 2));
+
+                if (response.ok) {
+                    const batchInfo = data.batch_info;
+                    showResult(`
+                        ✅ <strong>Preview Success!</strong><br>
+                        📄 Total Pages: ${batchInfo.total_pages}<br>
+                        📦 Total Batches: ${batchInfo.total_batches}<br>
+                        ⚡ Processing Time: ${batchInfo.processing_time_ms}ms<br>
+                        💾 File Size: ${batchInfo.file_size_mb}MB<br>
+                        📁 Output ZIP: ${batchInfo.output_zip_filename}<br>
+                        <br>
+                        <strong>Batch Details:</strong><br>
+                        ${data.batch_details.map(b => `Batch ${b.batch_number}: ${b.pages} (${b.page_count} pages)`).join('<br>')}
+                    `, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.detail}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+                updateResponse(`Error: ${error.message}`);
+            }
+        }
+
+        async function testActualSplit() {
+            const fileInput = document.getElementById('pdfFile');
+            const batchSize = document.getElementById('batchSize').value;
+            const outputPrefix = document.getElementById('outputPrefix').value;
+
+            if (!fileInput.files[0]) {
+                showResult('❌ Please select a PDF file first', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('batch_size', batchSize);
+            if (outputPrefix) {
+                formData.append('output_prefix', outputPrefix);
+            }
+
+            try {
+                showResult('🔄 Processing actual split (this will download a ZIP file)...', 'info');
+                
+                const response = await fetch(`${API_BASE}/split/batch`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    // Get headers for info
+                    const headers = {};
+                    response.headers.forEach((value, key) => {
+                        headers[key] = value;
+                    });
+
+                    // Download the file
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = headers['content-disposition']?.split('filename=')[1]?.replace(/"/g, '') || 'batches.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+
+                    updateResponse(JSON.stringify({
+                        message: "ZIP file downloaded successfully",
+                        headers: headers,
+                        blob_size: blob.size
+                    }, null, 2));
+
+                    showResult(`
+                        ✅ <strong>Download Success!</strong><br>
+                        📦 Batches: ${headers['x-batch-count']}<br>
+                        📄 Total Pages: ${headers['x-total-pages']}<br>
+                        ⚡ Processing Time: ${headers['x-processing-time-ms']}ms<br>
+                        💾 File Size: ${headers['x-file-size-mb']}MB<br>
+                        📁 Downloaded: ${blob.size} bytes
+                    `, 'success');
+                } else {
+                    const errorData = await response.json();
+                    showResult(`❌ Error: ${errorData.detail}`, 'error');
+                    updateResponse(JSON.stringify(errorData, null, 2));
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+                updateResponse(`Error: ${error.message}`);
+            }
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('responseText').value = '';
+        }
+    </script>
+</body>
+</html>
