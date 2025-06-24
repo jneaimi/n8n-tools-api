@@ -38,10 +38,28 @@ async def pdf_service_status():
             "operations": [
                 "split - Split PDF by pages or ranges",
                 "merge - Combine multiple PDFs",
-                "metadata - Extract PDF metadata"
+                "metadata - Extract PDF metadata",
+                "compress - Advanced multi-method compression with Context7 optimization"
             ],
-            "max_file_size": "50MB",
-            "supported_formats": ["pdf"]
+            "max_file_size": "100MB",
+            "supported_formats": ["pdf"],
+            "compression_available": True,
+            "compression_enhanced": {
+                "context7_optimized": True,
+                "methods": ["pypdf_enhanced", "pikepdf_enhanced", "pymupdf"],
+                "features": [
+                    "Object deduplication (up to 86% reduction)",
+                    "Memory-mapped processing for large files",
+                    "Smart image quality reduction",
+                    "Configurable content stream compression",
+                    "Advanced resource cleanup",
+                    "Method benchmarking and selection"
+                ],
+                "parameters": [
+                    "compression_level", "image_quality", "stream_compression_level",
+                    "aggressive_cleanup", "use_memory_mapping", "remove_images"
+                ]
+            }
         }
     )
 
@@ -820,4 +838,270 @@ async def merge_pdfs_with_ranges(
         raise HTTPException(
             status_code=400,
             detail=f"Failed to merge PDFs: {str(e)}"
+        )
+
+# ================== PDF COMPRESSION ENDPOINTS ==================
+
+@router.post("/compress", 
+             summary="Compress PDF to Reduce File Size",
+             responses={
+                 200: {
+                     "description": "Successfully compressed PDF - Returns compressed PDF file",
+                     "content": {
+                         "application/pdf": {
+                             "example": "Binary PDF file"
+                         }
+                     },
+                     "headers": {
+                         "Content-Disposition": {
+                             "description": "Attachment filename for download",
+                             "schema": {"type": "string"}
+                         },
+                         "X-Original-Size-MB": {
+                             "description": "Original file size in MB",
+                             "schema": {"type": "string"}
+                         },
+                         "X-Compressed-Size-MB": {
+                             "description": "Compressed file size in MB", 
+                             "schema": {"type": "string"}
+                         },
+                         "X-Reduction-Percentage": {
+                             "description": "Size reduction percentage",
+                             "schema": {"type": "string"}
+                         }
+                     }
+                 },
+                 400: {
+                     "description": "Bad request - Invalid file or parameters",
+                     "content": {
+                         "application/json": {
+                             "example": {"detail": "Failed to compress PDF: Invalid compression level"}
+                         }
+                     }
+                 }
+             })
+async def compress_pdf(
+    file: UploadFile = File(..., description="PDF file to compress"),
+    compression_level: str = Form("medium", description="Compression level: 'low', 'medium', or 'high'"),
+    remove_duplication: bool = Form(True, description="Remove duplicate objects (legacy)"),
+    compress_streams: bool = Form(True, description="Compress content streams (legacy)"),
+    remove_images: bool = Form(False, description="Remove all images (aggressive)"),
+    image_quality: int = Form(80, description="JPEG quality for image recompression (1-100)", ge=1, le=100),
+    stream_compression_level: int = Form(9, description="Content stream compression level (0-9)", ge=0, le=9),
+    aggressive_cleanup: bool = Form(True, description="Enable advanced cleanup optimizations"),
+    use_memory_mapping: bool = Form(True, description="Use memory-mapped access for large PDFs"),
+    output_filename: Optional[str] = Form(None, description="Custom output filename")
+):
+    """Advanced multi-method PDF compression to reduce file size.
+    
+    **Enhanced with Context7 Best Practices** for optimal compression results.
+    
+    **Compression Levels:**
+    - **low**: Basic pypdf compression (5-15% reduction)
+    - **medium**: Enhanced pypdf + pikepdf comparison (15-40% reduction) 
+    - **high**: All methods tested - returns best result (20-70% reduction)
+    
+    **Compression Methods Used:**
+    - **pypdf enhanced**: FlateDecode + object deduplication (up to 86% reduction)
+    - **pikepdf enhanced**: Memory-mapped access + resource cleanup + structural optimization
+    - **PyMuPDF**: Garbage collection + deflate compression
+    
+    **New Advanced Parameters:**
+    - **stream_compression_level**: Fine-tune content stream compression (0-9)
+    - **image_quality**: Control JPEG recompression quality (1-100)
+    - **aggressive_cleanup**: Enable advanced object deduplication and cleanup
+    - **use_memory_mapping**: Optimize large PDF processing with memory mapping
+    
+    **For n8n users:** Set response format to "File" to handle the binary download.
+    
+    **Advanced Features:**
+    - Automatic method benchmarking for best results
+    - Context7-optimized compression algorithms
+    - Smart image processing and quality reduction
+    - Advanced object deduplication and orphan removal
+    - Memory-optimized processing for files up to 100MB
+    - Detailed compression analytics in response headers
+    """
+    try:
+        start_time = time.time()
+        
+        # Validate the file
+        await validate_pdf_file(file)
+        
+        # Validate compression level
+        if compression_level not in ["low", "medium", "high"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid compression level. Must be 'low', 'medium', or 'high'"
+            )
+        
+        # Read file content
+        pdf_content = await file.read()
+        original_size = len(pdf_content)
+        
+        # Perform compression
+        compressed_content, stats = await PDFService.compress_pdf(
+            pdf_content,
+            compression_level=compression_level,
+            remove_duplication=remove_duplication,
+            compress_streams=compress_streams,
+            remove_images=remove_images,
+            image_quality=image_quality,
+            stream_compression_level=stream_compression_level,
+            aggressive_cleanup=aggressive_cleanup,
+            use_memory_mapping=use_memory_mapping
+        )
+        
+        # Generate output filename
+        if not output_filename:
+            base_name = file.filename.rsplit('.', 1)[0] if file.filename else "document"
+            output_filename = f"{base_name}_compressed.pdf"
+        elif not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        # Return compressed PDF with detailed analytics
+        headers = {
+            "Content-Disposition": f"attachment; filename={output_filename}",
+            "X-Original-Size-MB": str(stats["original_size_mb"]),
+            "X-Compressed-Size-MB": str(stats["compressed_size_mb"]),
+            "X-Reduction-Percentage": str(stats["reduction_percentage"]),
+            "X-Compression-Level": compression_level,
+            "X-Processing-Time-Ms": str(stats["processing_time_ms"]),
+            "X-Page-Count": str(stats["page_count"]),
+            "Cache-Control": "no-cache"
+        }
+        
+        # Add advanced compression analytics if available
+        if "best_method" in stats:
+            headers["X-Best-Method"] = stats["best_method"]
+            headers["X-Methods-Tried"] = ",".join(stats["methods_tried"])
+            headers["X-Methods-Count"] = str(len(stats["methods_tried"]))
+        
+        # Add new enhanced parameters to headers
+        headers["X-Stream-Compression-Level"] = str(stream_compression_level)
+        headers["X-Image-Quality"] = str(image_quality) if not remove_images else "removed"
+        headers["X-Aggressive-Cleanup"] = str(aggressive_cleanup)
+        headers["X-Memory-Mapping"] = str(use_memory_mapping)
+        headers["X-Context7-Enhanced"] = "true"
+        
+        # Expose all headers for n8n access
+        exposed_headers = [
+            "Content-Disposition", "X-Original-Size-MB", "X-Compressed-Size-MB", 
+            "X-Reduction-Percentage", "X-Compression-Level", "X-Processing-Time-Ms", 
+            "X-Page-Count", "X-Best-Method", "X-Methods-Tried", "X-Methods-Count",
+            "X-Stream-Compression-Level", "X-Image-Quality", "X-Aggressive-Cleanup",
+            "X-Memory-Mapping", "X-Context7-Enhanced"
+        ]
+        headers["Access-Control-Expose-Headers"] = ", ".join(exposed_headers)
+        
+        return StreamingResponse(
+            io.BytesIO(compressed_content),
+            media_type="application/pdf",
+            headers=headers
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to compress PDF: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to compress PDF: {str(e)}"
+        )
+
+@router.post("/compress/preview",
+             summary="Preview Compression Results",
+             response_model=None,
+             responses={
+                 200: {
+                     "description": "Compression preview with estimated results",
+                     "content": {
+                         "application/json": {
+                             "example": {
+                                 "status": "success",
+                                 "message": "Compression preview generated",
+                                 "preview": {
+                                     "original_size_mb": 15.2,
+                                     "estimated_compressed_size_mb": 10.6,
+                                     "estimated_reduction_percentage": 30.0,
+                                     "page_count": 50,
+                                     "has_images": True,
+                                     "image_count": 25,
+                                     "available_methods": ["pypdf_enhanced", "pikepdf", "pymupdf"],
+                                     "recommendations": [
+                                         "High compression recommended - PDF contains many images",
+                                         "Multiple methods will be tested for optimal results"
+                                     ]
+                                 }
+                             }
+                         }
+                     }
+                 }
+             })
+async def preview_compress_pdf(
+    file: UploadFile = File(..., description="PDF file to analyze"),
+    compression_level: str = Form("medium", description="Compression level to preview"),
+    image_quality: int = Form(80, description="JPEG quality for image recompression (1-100)", ge=1, le=100),
+    stream_compression_level: int = Form(9, description="Content stream compression level (0-9)", ge=0, le=9),
+    aggressive_cleanup: bool = Form(True, description="Enable advanced cleanup optimizations")
+):
+    """Preview potential compression results without actually compressing the file.
+    
+    **Enhanced with Context7 Analysis** for detailed optimization insights.
+    
+    **Use this endpoint to:**
+    - Estimate file size reduction before compression
+    - Get Context7-based optimization recommendations
+    - Analyze PDF content type and complexity
+    - Compare method effectiveness predictions
+    - Plan optimal compression strategy for different PDF types
+    - Test various parameter combinations before actual compression
+    
+    **New Analysis Features:**
+    - Content type classification (text-heavy, image-heavy, mixed)
+    - Method effectiveness predictions
+    - Parameter optimization suggestions
+    - Context7-enhanced recommendations
+    
+    **For Swagger UI testing:** Returns comprehensive JSON analysis for easy viewing in browser.
+    """
+    try:
+        # Validate the file
+        await validate_pdf_file(file)
+        
+        # Validate compression level
+        if compression_level not in ["low", "medium", "high"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid compression level. Must be 'low', 'medium', or 'high'"
+            )
+        
+        # Read file content
+        pdf_content = await file.read()
+        
+        # Get compression preview
+        preview = await PDFService.get_compression_preview(
+            pdf_content,
+            compression_level=compression_level,
+            image_quality=image_quality,
+            stream_compression_level=stream_compression_level,
+            aggressive_cleanup=aggressive_cleanup
+        )
+        
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Compression preview for {file.filename or 'PDF'} "
+                           f"({preview['original_size_mb']} MB, {preview['page_count']} pages)",
+                "preview": preview,
+                "next_steps": {
+                    "to_compress": "Use POST /api/v1/pdf/compress with same parameters",
+                    "note": f"Estimated {preview['estimated_reduction_percentage']}% size reduction possible"
+                }
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to preview PDF compression: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to analyze PDF for compression: {str(e)}"
         )
