@@ -4,6 +4,7 @@ uvicorn[standard]==0.24.0
 
 # PDF processing
 pypdf==3.17.4
+pikepdf==9.9.0
 
 # File handling and validation
 python-multipart==0.0.6

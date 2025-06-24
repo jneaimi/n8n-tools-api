@@ -79,7 +79,7 @@ async def validate_pdf_file(file: UploadFile) -> bool:
             correlation_id=correlation_id
         )
         
-        # Check file size (50MB limit)
+        # Check file size (100MB limit)
         if len(content) > settings.MAX_FILE_SIZE:
             raise FileSizeError(f"File too large. Max size: {settings.MAX_FILE_SIZE / (1024*1024):.1f}MB")
         

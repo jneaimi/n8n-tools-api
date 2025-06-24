@@ -53,8 +53,8 @@ with Qdrant vector database integration.
 - **Streaming responses** for large file operations
 
 ### 📋 File Requirements
-- **PDF Operations**: PDF files only, 50MB max per file
-- **OCR Operations**: PDF, PNG, JPG, JPEG, TIFF files, 50MB max
+- **PDF Operations**: PDF files only, 100MB max per file
+- **OCR Operations**: PDF, PNG, JPG, JPEG, TIFF files, 100MB max
 - **RAG Operations**: API key authentication required
 - **Merge Limit**: Maximum 20 files for merge operations
 - **Authentication**: API key required for OCR and RAG operations
@@ -620,7 +620,7 @@ Use the interactive documentation below to explore all available endpoints.
                     "mistral_embeddings": True
                 },
                 "limits": {
-                    "max_file_size_mb": 50,
+                    "max_file_size_mb": 100,
                     "max_merge_files": 20,
                     "supported_formats": ["pdf"],
                     "ocr_formats": ["pdf", "png", "jpg", "jpeg", "tiff"],

@@ -14,7 +14,7 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       # File handling
-      - MAX_FILE_SIZE=52428800  # 50MB
+      - MAX_FILE_SIZE=104857600  # 100MB
       - TEMP_DIR=/tmp/n8n-tools-api
       # Logging
       - LOG_LEVEL=INFO

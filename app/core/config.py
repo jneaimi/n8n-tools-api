@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     
     # File handling settings
-    MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
+    MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB
     ALLOWED_EXTENSIONS: List[str] = [".pdf"]
     TEMP_DIR: str = "/tmp/n8n-tools"
     

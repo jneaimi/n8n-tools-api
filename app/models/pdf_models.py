@@ -236,3 +236,85 @@ class PDFBatchSplitResponse(BaseModel):
     batch_size: int = Field(..., description="Pages per batch")
     files: Dict[str, str] = Field(..., description="Map of filename to file content/URL")
     processing_time_ms: Optional[float] = Field(None, description="Processing time in milliseconds")
+
+# ================== PDF COMPRESSION MODELS ==================
+
+class PDFCompressRequest(BaseModel):
+    """Request model for PDF compression operations."""
+    
+    compression_level: Literal["low", "medium", "high"] = Field(
+        "medium",
+        description="Compression level: 'low' (minimal), 'medium' (balanced), 'high' (aggressive)"
+    )
+    
+    remove_duplication: bool = Field(
+        True,
+        description="Remove duplicate objects in the PDF"
+    )
+    
+    compress_streams: bool = Field(
+        True,
+        description="Compress content streams (text and graphics)"
+    )
+    
+    remove_images: bool = Field(
+        False,
+        description="Remove all images (aggressive compression, use with caution)"
+    )
+    
+    image_quality: int = Field(
+        85,
+        ge=1,
+        le=100,
+        description="JPEG quality for image recompression (1-100, higher is better quality)"
+    )
+    
+    output_filename: Optional[str] = Field(
+        None,
+        description="Custom filename for compressed PDF",
+        max_length=100
+    )
+
+class CompressionStats(BaseModel):
+    """Statistics about PDF compression results."""
+    
+    original_size_bytes: int = Field(..., description="Original file size in bytes")
+    compressed_size_bytes: int = Field(..., description="Compressed file size in bytes")
+    reduction_bytes: int = Field(..., description="Size reduction in bytes")
+    reduction_percentage: float = Field(..., description="Size reduction percentage")
+    original_size_mb: float = Field(..., description="Original file size in MB")
+    compressed_size_mb: float = Field(..., description="Compressed file size in MB")
+    compression_level: str = Field(..., description="Compression level used")
+    processing_time_ms: float = Field(..., description="Processing time in milliseconds")
+    page_count: int = Field(..., description="Number of pages in PDF")
+    settings: Dict[str, Any] = Field(..., description="Compression settings used")
+
+class PDFCompressResponse(BaseModel):
+    """Response model for PDF compression operations."""
+    
+    status: str = Field(..., description="Operation status")
+    message: str = Field(..., description="Operation message")
+    stats: CompressionStats = Field(..., description="Compression statistics")
+    warnings: Optional[List[str]] = Field(None, description="Any warnings during compression")
+
+class CompressionPreview(BaseModel):
+    """Preview information for PDF compression."""
+    
+    original_size_bytes: int = Field(..., description="Original file size in bytes")
+    original_size_mb: float = Field(..., description="Original file size in MB")
+    estimated_compressed_size_bytes: int = Field(..., description="Estimated compressed size in bytes")
+    estimated_compressed_size_mb: float = Field(..., description="Estimated compressed size in MB")
+    estimated_reduction_percentage: float = Field(..., description="Estimated size reduction percentage")
+    page_count: int = Field(..., description="Number of pages in PDF")
+    has_images: bool = Field(..., description="Whether PDF contains images")
+    image_count: int = Field(..., description="Number of images detected")
+    has_forms: bool = Field(..., description="Whether PDF contains forms")
+    compression_level: str = Field(..., description="Compression level for preview")
+    recommendations: List[str] = Field(..., description="Compression recommendations")
+
+class PDFCompressPreviewResponse(BaseModel):
+    """Response model for PDF compression preview."""
+    
+    status: str = Field(..., description="Operation status")
+    message: str = Field(..., description="Operation message")
+    preview: CompressionPreview = Field(..., description="Compression preview information")
